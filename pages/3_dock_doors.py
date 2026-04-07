@@ -1,0 +1,187 @@
+import gspread
+import pandas as pd
+import streamlit as st
+import json
+from google.oauth2.service_account import Credentials
+
+st.set_page_config(layout="wide")
+st.title("Dock door board")
+st.caption("Live from Brodiaea Operations — Dock_Status tab")
+
+@st.cache_data(ttl=60)
+def load_data():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    gc = gspread.authorize(creds)
+    sheet = gc.open("Brodiaea Operations").worksheet("Dock_Status")
+    df = pd.DataFrame(sheet.get_all_values())
+    df.columns = df.iloc[0]
+    df = df[1:].reset_index(drop=True)
+    df = df.loc[:, df.columns != '']
+    df["_row_num"] = range(2, len(df) + 2)
+    return df
+
+def get_sheet():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    gc = gspread.authorize(creds)
+    return gc.open("Brodiaea Operations").worksheet("Dock_Status")
+
+def get_col_letter(headers, col_name):
+    try:
+        idx = list(headers).index(col_name)
+        return chr(ord('A') + idx)
+    except ValueError:
+        return None
+
+def get_door_type(status, unloading, container):
+    status = str(status).strip().lower()
+    unloading = str(unloading).strip().lower()
+    container = str(container).strip()
+    reserved = ["ramp", "trash", "cardboard", "pallets", "fedex fround", "ups"]
+    if any(r in container.lower() for r in reserved):
+        return "reserved"
+    if "vacant" in status:
+        return "vacant"
+    if "full" in unloading:
+        return "full"
+    if "unload" in unloading or "loading" in unloading:
+        return "unloading"
+    return "occupied"
+
+color_map = {
+    "vacant":    {"bg": "#EAF3DE", "border": "#3B6D11", "text": "#27500A", "label": "Vacant"},
+    "occupied":  {"bg": "#FCEBEB", "border": "#A32D2D", "text": "#791F1F", "label": "Occupied"},
+    "unloading": {"bg": "#E6F1FB", "border": "#185FA5", "text": "#0C447C", "label": "Unloading"},
+    "reserved":  {"bg": "#F1EFE8", "border": "#5F5E5A", "text": "#444441", "label": "Reserved"},
+    "full":      {"bg": "#FAEEDA", "border": "#854F0B", "text": "#633806", "label": "Full"},
+}
+
+df = load_data()
+headers = get_sheet().row_values(1)
+
+# --- sidebar update form ---
+with st.sidebar:
+    st.subheader("Update a door")
+
+    door_options = df["Door"].tolist() if "Door" in df.columns else [f"Door {i}" for i in range(1, 36)]
+    selected_door = st.selectbox("Select door", door_options)
+
+    door_row = df[df["Door"] == selected_door].iloc[0] if "Door" in df.columns else None
+
+    current_container = str(door_row.get("Container #/Trailer", "")).strip() if door_row is not None else ""
+    current_status = str(door_row.get("Status", "")).strip() if door_row is not None else "Vacant"
+    current_unloading = str(door_row.get("Unloading/Empty", "")).strip() if door_row is not None else ""
+    current_customer = str(door_row.get("CUSTOMER", "")).strip() if door_row is not None else ""
+    current_carrier = str(door_row.get("Carrier", "")).strip() if door_row is not None else ""
+
+    new_container = st.text_input("Container / trailer", value=current_container if current_container != "nan" else "")
+    new_status = st.selectbox("Status", ["Vacant", "Occupied"],
+                              index=0 if "vacant" in current_status.lower() else 1)
+    new_unloading = st.selectbox("Unloading / empty", ["", "Unloading", "Full", "Loading"],
+                                 index=["", "Unloading", "Full", "Loading"].index(current_unloading)
+                                 if current_unloading in ["", "Unloading", "Full", "Loading"] else 0)
+    new_customer = st.text_input("Customer", value=current_customer if current_customer != "nan" else "")
+    new_carrier = st.text_input("Carrier", value=current_carrier if current_carrier != "nan" else "")
+
+    if st.button("Save changes", type="primary"):
+        sheet = get_sheet()
+        row_num = int(door_row["_row_num"])
+
+        updates = {}
+        if "Container #/Trailer" in headers:
+            updates[chr(ord('A') + headers.index("Container #/Trailer"))] = new_container
+        if "Status" in headers:
+            updates[chr(ord('A') + headers.index("Status"))] = new_status
+        if "Unloading/Empty" in headers:
+            updates[chr(ord('A') + headers.index("Unloading/Empty"))] = new_unloading
+        if "CUSTOMER" in headers:
+            updates[chr(ord('A') + headers.index("CUSTOMER"))] = new_customer
+        if "Carrier" in headers:
+            updates[chr(ord('A') + headers.index("Carrier"))] = new_carrier
+
+        for col_letter, value in updates.items():
+            sheet.update(f"{col_letter}{row_num}", [[value]])
+
+        st.success(f"{selected_door} updated")
+        st.cache_data.clear()
+        st.rerun()
+
+    if st.button("Clear door"):
+        sheet = get_sheet()
+        row_num = int(door_row["_row_num"])
+        for col_name in ["Container #/Trailer", "Unloading/Empty", "CUSTOMER", "Carrier"]:
+            if col_name in headers:
+                col = chr(ord('A') + headers.index(col_name))
+                sheet.update(f"{col}{row_num}", [[""]])
+        status_col = chr(ord('A') + headers.index("Status")) if "Status" in headers else None
+        if status_col:
+            sheet.update(f"{status_col}{row_num}", [["Vacant"]])
+        st.success(f"{selected_door} cleared")
+        st.cache_data.clear()
+        st.rerun()
+
+# --- metrics ---
+total = len(df)
+
+def door_type_series(row):
+    return get_door_type(row.get("Status", ""), row.get("Unloading/Empty", ""), row.get("Container #/Trailer", ""))
+
+types = df.apply(door_type_series, axis=1)
+occupied_count = types.isin(["occupied", "full", "unloading"]).sum()
+vacant_count = types.eq("vacant").sum()
+utilization = round((occupied_count / total) * 100) if total > 0 else 0
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Total doors", total)
+col2.metric("Occupied", occupied_count)
+col3.metric("Vacant", vacant_count)
+col4.metric("Utilization", f"{utilization}%")
+
+if st.button("Refresh board"):
+    st.cache_data.clear()
+    st.rerun()
+
+# --- legend ---
+st.markdown("""
+<div style="display:flex;gap:16px;flex-wrap:wrap;margin:1rem 0;">
+  <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:#639922;display:inline-block"></span>Vacant</span>
+  <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:#E24B4A;display:inline-block"></span>Occupied</span>
+  <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:#378ADD;display:inline-block"></span>Unloading</span>
+  <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:#888780;display:inline-block"></span>Reserved</span>
+  <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:#EF9F27;display:inline-block"></span>Full</span>
+</div>
+""", unsafe_allow_html=True)
+
+# --- door tiles ---
+cols = st.columns(7)
+
+for i, row in df.iterrows():
+    door_label = str(row.get("Door", f"Door {i+1}")).strip()
+    container = str(row.get("Container #/Trailer", "")).strip()
+    status_raw = str(row.get("Status", "")).strip()
+    unloading = str(row.get("Unloading/Empty", "")).strip()
+
+    door_type = get_door_type(status_raw, unloading, container)
+    c = color_map[door_type]
+    col = cols[i % 7]
+
+    display_name = container if container and container != "nan" else ""
+    display_sub = unloading if unloading and unloading != "nan" and door_type != "reserved" else c["label"]
+
+    with col:
+        st.markdown(f"""
+        <div style="background:{c['bg']};border:0.5px solid {c['border']};border-radius:8px;
+                    padding:10px 8px;min-height:80px;margin-bottom:8px;
+                    display:flex;flex-direction:column;justify-content:space-between;">
+          <span style="font-size:10px;font-weight:500;color:{c['text']}">{door_label}</span>
+          <span style="font-size:10px;font-weight:500;color:{c['text']};word-break:break-all;margin-top:4px">{display_name}</span>
+          <span style="font-size:9px;color:{c['text']};margin-top:2px">{display_sub}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+st.caption("Select a door in the left panel to update its status. Changes save directly to Google Sheets.")
