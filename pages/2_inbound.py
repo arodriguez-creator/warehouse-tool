@@ -69,12 +69,6 @@ def parse_date(val):
 
 df["Arrival date"] = df["Arrival date"].apply(parse_date)
 
-st.write("Total rows before filter:", len(df))
-st.write("Sample dates:", df["Arrival date"].tail(5).tolist())
-st.write("Sample PICKED UP:", df["PICKED UP"].tail(5).tolist())
-st.write("Sample EMPTY:", df["EMPTY"].tail(5).tolist())
-st.write("Sample CONTAINER:", df["CONTAINER"].tail(5).tolist())
-
 df = df[df["PICKED UP"] != "TRUE"]
 df = df[df["EMPTY"] != "TRUE"]
 df = df[df["Arrival date"].notna()]
