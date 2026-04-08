@@ -9,6 +9,8 @@ GLOBAL_CSS = """
   [data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] * { color: #1a2332 !important; }
   [data-testid="stSidebar"] .stNumberInput input { color: #1a2332 !important; background: #ffffff !important; }
   [data-testid="stSidebar"] textarea { color: #1a2332 !important; background: #ffffff !important; }
+  [data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] { border-radius: 8px !important; }
+  [data-testid="stSidebar"] input { border-radius: 8px !important; }
   [data-testid="stSidebar"] .stButton button {
       background-color: #00c851;
       color: #ffffff !important;
@@ -82,6 +84,7 @@ GLOBAL_CSS = """
     margin-bottom: 12px; text-align: center;
   }
   .group-header p { margin: 0; font-size: 14px; font-weight: 500; color: #ffffff; }
+  
 </style>
 """
 
