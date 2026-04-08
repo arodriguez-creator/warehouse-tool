@@ -97,28 +97,43 @@ with st.sidebar:
         received = sel_row["RECEIVED"] == "TRUE"
         picked = sel_row["PICKED UP"] == "TRUE"
 
-        st.markdown("**Quick actions**")
-        qc1, qc2 = st.columns(2)
+st.markdown("**Quick actions**")
 
-        if received:
-            qc1.success("Received")
-        else:
-            if qc1.button("Mark received", type="primary"):
-                sheet = get_sheet()
-                sheet.update(f"{received_col}{row_num}", [["TRUE"]])
-                st.cache_data.clear()
-                st.success(f"{selected_container} marked received")
-                st.rerun()
+empty = sel_row["EMPTY"] == "TRUE"
 
-        if picked:
-            qc2.success("Picked up")
-        else:
-            if qc2.button("Mark picked up"):
-                sheet = get_sheet()
-                sheet.update(f"{picked_up_col}{row_num}", [["TRUE"]])
-                st.cache_data.clear()
-                st.success(f"{selected_container} marked picked up")
-                st.rerun()
+if empty:
+    st.success("Container empty")
+else:
+    if st.button("Mark empty", type="primary"):
+        sheet = get_sheet()
+        today_str = datetime.today().strftime("%-m/%-d/%Y")
+        sheet.update(f"G{row_num}", [["TRUE"]])
+        sheet.update(f"H{row_num}", [[today_str]])
+        st.cache_data.clear()
+        st.success(f"{selected_container} marked empty")
+        st.rerun()
+
+qc1, qc2 = st.columns(2)
+
+if received:
+    qc1.success("Received")
+else:
+    if qc1.button("Mark received", type="primary"):
+        sheet = get_sheet()
+        sheet.update(f"{received_col}{row_num}", [["TRUE"]])
+        st.cache_data.clear()
+        st.success(f"{selected_container} marked received")
+        st.rerun()
+
+if picked:
+    qc2.success("Picked up")
+else:
+    if qc2.button("Mark picked up"):
+        sheet = get_sheet()
+        sheet.update(f"{picked_up_col}{row_num}", [["TRUE"]])
+        st.cache_data.clear()
+        st.success(f"{selected_container} marked picked up")
+        st.rerun()
 
         st.divider()
         st.markdown("**Edit details**")
