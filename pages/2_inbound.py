@@ -103,7 +103,7 @@ with st.sidebar:
         if empty:
             st.success("Container empty")
         else:
-            if st.button("Mark empty", type="primary"):
+            if st.button("Mark empty", type="primary", use_container_width=True):
                 sheet = get_sheet()
                 today_str = datetime.today().strftime("%-m/%-d/%Y")
                 sheet.update(f"G{row_num}", [["TRUE"]])
@@ -112,27 +112,25 @@ with st.sidebar:
                 st.success(f"{selected_container} marked empty")
                 st.rerun()
 
-        qc1, qc2 = st.columns(2)
+    if received:
+        st.success("Received")
+    else:
+        if st.button("Mark received", type="primary", use_container_width=True):
+            sheet = get_sheet()
+            sheet.update(f"{received_col}{row_num}", [["TRUE"]])
+            st.cache_data.clear()
+            st.success(f"{selected_container} marked received")
+            st.rerun()
 
-        if received:
-            qc1.success("Received")
-        else:
-            if qc1.button("Mark received", type="primary"):
-                sheet = get_sheet()
-                sheet.update(f"{received_col}{row_num}", [["TRUE"]])
-                st.cache_data.clear()
-                st.success(f"{selected_container} marked received")
-                st.rerun()
-
-        if picked:
-            qc2.success("Picked up")
-        else:
-            if qc2.button("Mark picked up"):
-                sheet = get_sheet()
-                sheet.update(f"{picked_up_col}{row_num}", [["TRUE"]])
-                st.cache_data.clear()
-                st.success(f"{selected_container} marked picked up")
-                st.rerun()
+    if picked:
+        st.success("Picked up")
+    else:
+        if st.button("Mark picked up", use_container_width=True):
+            sheet = get_sheet()
+            sheet.update(f"{picked_up_col}{row_num}", [["TRUE"]])
+            st.cache_data.clear()
+            st.success(f"{selected_container} marked picked up")
+            st.rerun()
 
         st.divider()
         st.markdown("**Edit details**")
@@ -200,8 +198,8 @@ with st.sidebar:
                 st.success(f"{selected_container} updated")
                 st.cache_data.clear()
                 st.rerun()
-    else:
-        st.info("No active containers to edit")
+        else:
+            st.info("No active containers to edit")
 
 # --- main page ---
 df = get_active_df()
