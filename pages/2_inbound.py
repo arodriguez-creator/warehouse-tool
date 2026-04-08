@@ -57,6 +57,9 @@ def parse_date(val):
             pass
     return pd.to_datetime(val, errors="coerce")
 
+def clean(val):
+    return "" if not val or str(val).strip() == "nan" else str(val).strip()
+
 all_headers = get_sheet().row_values(1)
 
 def col_letter(col_name):
@@ -90,19 +93,22 @@ with st.sidebar:
     container_options = df_all["CONTAINER"].tolist()
 
     if container_options:
-        selected_container = st.selectbox("Select container", container_options)
+        selected_container = st.selectbox("Select container", container_options, key="container_select")
         sel_row = df_all[df_all["CONTAINER"] == selected_container].iloc[0]
         row_num = int(sel_row["_row_num"])
         received = sel_row["RECEIVED"] == "TRUE"
         picked = sel_row["PICKED UP"] == "TRUE"
         empty = sel_row["EMPTY"] == "TRUE"
 
+        # k makes every widget unique per container so values refresh on switch
+        k = selected_container.replace(" ", "_")
+
         st.markdown("**Quick actions**")
 
         if empty:
-            st.success("Container empty")
+            st.success("Container empty ✓")
         else:
-            if st.button("Mark empty", type="primary", use_container_width=True):
+            if st.button("Mark empty", type="primary", use_container_width=True, key=f"empty_{k}"):
                 sheet = get_sheet()
                 today_str = datetime.today().strftime("%-m/%-d/%Y")
                 sheet.update(f"G{row_num}", [["TRUE"]])
@@ -112,9 +118,9 @@ with st.sidebar:
                 st.rerun()
 
         if received:
-            st.success("Received")
+            st.success("Received ✓")
         else:
-            if st.button("Mark received", type="primary", use_container_width=True):
+            if st.button("Mark received", type="primary", use_container_width=True, key=f"recv_{k}"):
                 sheet = get_sheet()
                 sheet.update(f"{received_col}{row_num}", [["TRUE"]])
                 st.cache_data.clear()
@@ -122,9 +128,9 @@ with st.sidebar:
                 st.rerun()
 
         if picked:
-            st.success("Picked up")
+            st.success("Picked up ✓")
         else:
-            if st.button("Mark picked up", use_container_width=True):
+            if st.button("Mark picked up", use_container_width=True, key=f"pick_{k}"):
                 sheet = get_sheet()
                 sheet.update(f"{picked_up_col}{row_num}", [["TRUE"]])
                 st.cache_data.clear()
@@ -134,26 +140,30 @@ with st.sidebar:
         st.divider()
         st.markdown("**Edit details**")
 
-        current_status = str(sel_row.get("CONTAINER STATUS", "")).strip()
-        current_dock = str(sel_row.get("DOCK DOOR", "")).strip()
-        current_trucking = str(sel_row.get("TRUCKING COMPANY", "")).strip()
-        current_account = str(sel_row.get("ACCOUNT", "")).strip()
-        current_sku = str(sel_row.get("SKU Count", "")).strip()
-        current_carton = str(sel_row.get("Carton Count", "")).strip()
-        current_warehouse = str(sel_row.get("WAREHOUSE", "")).strip()
+        current_status = clean(sel_row.get("CONTAINER STATUS", ""))
+        current_dock = clean(sel_row.get("DOCK DOOR", ""))
+        current_trucking = clean(sel_row.get("TRUCKING COMPANY", ""))
+        current_account = clean(sel_row.get("ACCOUNT", ""))
+        current_sku = clean(sel_row.get("SKU Count", ""))
+        current_carton = clean(sel_row.get("Carton Count", ""))
+        current_warehouse = clean(sel_row.get("WAREHOUSE", ""))
 
         status_options = ["", "In dock", "picked up", "scheduled"]
         status_index = status_options.index(current_status) if current_status in status_options else 0
 
-        new_status = st.selectbox("Container status", status_options, index=status_index)
-        new_dock = st.text_input("Dock door", value=current_dock if current_dock != "nan" else "")
-        new_trucking = st.text_input("Trucking company", value=current_trucking if current_trucking != "nan" else "")
-        new_account = st.text_input("Account", value=current_account if current_account != "nan" else "")
-        new_sku = st.number_input("SKU count", min_value=0, step=1, value=int(current_sku) if current_sku.isdigit() else 0)
-        new_carton = st.number_input("Carton count", min_value=0, step=1, value=int(current_carton) if current_carton.isdigit() else 0)
-        new_warehouse = st.text_input("Warehouse", value=current_warehouse if current_warehouse != "nan" else "")
+        new_status = st.selectbox("Container status", status_options, index=status_index, key=f"status_{k}")
+        new_dock = st.text_input("Dock door", value=current_dock, key=f"dock_{k}")
+        new_trucking = st.text_input("Trucking company", value=current_trucking, key=f"truck_{k}")
+        new_account = st.text_input("Account", value=current_account, key=f"acct_{k}")
+        new_sku = st.number_input("SKU count", min_value=0, step=1,
+                                   value=int(current_sku) if current_sku.isdigit() else 0,
+                                   key=f"sku_{k}")
+        new_carton = st.number_input("Carton count", min_value=0, step=1,
+                                      value=int(current_carton) if current_carton.isdigit() else 0,
+                                      key=f"carton_{k}")
+        new_warehouse = st.text_input("Warehouse", value=current_warehouse, key=f"wh_{k}")
 
-        if st.button("Save changes", type="primary", use_container_width=True):
+        if st.button("Save changes", type="primary", use_container_width=True, key=f"save_{k}"):
             dock_warning = False
             if new_dock and new_dock != current_dock:
                 dock_df = load_dock_data()

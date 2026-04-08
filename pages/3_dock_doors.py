@@ -31,6 +31,9 @@ def get_sheet():
     gc = gspread.authorize(get_creds())
     return gc.open("Brodiaea Operations").worksheet("Dock_Status")
 
+def clean(val):
+    return "" if not val or str(val).strip() == "nan" else str(val).strip()
+
 def get_door_type(status, unloading, container):
     status = str(status).strip().lower()
     unloading = str(unloading).strip().lower()
@@ -60,56 +63,63 @@ headers = get_sheet().row_values(1)
 with st.sidebar:
     st.subheader("Update a door")
     door_options = df["Door"].tolist() if "Door" in df.columns else [f"Door {i}" for i in range(1, 36)]
-    selected_door = st.selectbox("Select door", door_options)
-    door_row = df[df["Door"] == selected_door].iloc[0] if "Door" in df.columns else None
+    selected_door = st.selectbox("Select door", door_options, key="door_select")
 
-    current_container = str(door_row.get("Container #/Trailer", "")).strip() if door_row is not None else ""
-    current_status = str(door_row.get("Status", "")).strip() if door_row is not None else "Vacant"
-    current_unloading = str(door_row.get("Unloading/Empty", "")).strip() if door_row is not None else ""
-    current_customer = str(door_row.get("CUSTOMER", "")).strip() if door_row is not None else ""
-    current_carrier = str(door_row.get("Carrier", "")).strip() if door_row is not None else ""
+    door_row = df[df["Door"] == selected_door].iloc[0] if "Door" in df.columns and not df[df["Door"] == selected_door].empty else None
 
-    new_container = st.text_input("Container / trailer", value=current_container if current_container != "nan" else "")
-    new_status = st.selectbox("Status", ["Vacant", "Occupied"], index=0 if "vacant" in current_status.lower() else 1)
-    new_unloading = st.selectbox("Unloading / empty", ["", "Unloading", "Full", "Loading"],
-                                 index=["", "Unloading", "Full", "Loading"].index(current_unloading)
-                                 if current_unloading in ["", "Unloading", "Full", "Loading"] else 0)
-    new_customer = st.text_input("Customer", value=current_customer if current_customer != "nan" else "")
-    new_carrier = st.text_input("Carrier", value=current_carrier if current_carrier != "nan" else "")
-
-    if st.button("Save changes", type="primary", use_container_width=True):
-        sheet = get_sheet()
+    if door_row is not None:
         row_num = int(door_row["_row_num"])
-        updates = {}
-        if "Container #/Trailer" in headers:
-            updates[chr(ord('A') + headers.index("Container #/Trailer"))] = new_container
-        if "Status" in headers:
-            updates[chr(ord('A') + headers.index("Status"))] = new_status
-        if "Unloading/Empty" in headers:
-            updates[chr(ord('A') + headers.index("Unloading/Empty"))] = new_unloading
-        if "CUSTOMER" in headers:
-            updates[chr(ord('A') + headers.index("CUSTOMER"))] = new_customer
-        if "Carrier" in headers:
-            updates[chr(ord('A') + headers.index("Carrier"))] = new_carrier
-        for col_letter, value in updates.items():
-            sheet.update(f"{col_letter}{row_num}", [[value]])
-        st.success(f"{selected_door} updated")
-        st.cache_data.clear()
-        st.rerun()
+        k = selected_door.replace(" ", "_")
 
-    if st.button("Clear door", use_container_width=True):
-        sheet = get_sheet()
-        row_num = int(door_row["_row_num"])
-        for col_name in ["Container #/Trailer", "Unloading/Empty", "CUSTOMER", "Carrier"]:
-            if col_name in headers:
-                col = chr(ord('A') + headers.index(col_name))
-                sheet.update(f"{col}{row_num}", [[""]])
-        if "Status" in headers:
-            status_col = chr(ord('A') + headers.index("Status"))
-            sheet.update(f"{status_col}{row_num}", [["Vacant"]])
-        st.success(f"{selected_door} cleared")
-        st.cache_data.clear()
-        st.rerun()
+        current_container = clean(door_row.get("Container #/Trailer", ""))
+        current_status = clean(door_row.get("Status", ""))
+        current_unloading = clean(door_row.get("Unloading/Empty", ""))
+        current_customer = clean(door_row.get("CUSTOMER", ""))
+        current_carrier = clean(door_row.get("Carrier", ""))
+
+        unloading_options = ["", "Unloading", "Full", "Loading"]
+        unloading_index = unloading_options.index(current_unloading) if current_unloading in unloading_options else 0
+
+        new_container = st.text_input("Container / trailer", value=current_container, key=f"container_{k}")
+        new_status = st.selectbox("Status", ["Vacant", "Occupied"],
+                                   index=0 if "vacant" in current_status.lower() else 1,
+                                   key=f"status_{k}")
+        new_unloading = st.selectbox("Unloading / empty", unloading_options,
+                                      index=unloading_index, key=f"unload_{k}")
+        new_customer = st.text_input("Customer", value=current_customer, key=f"customer_{k}")
+        new_carrier = st.text_input("Carrier", value=current_carrier, key=f"carrier_{k}")
+
+        if st.button("Save changes", type="primary", use_container_width=True, key=f"save_{k}"):
+            sheet = get_sheet()
+            updates = {}
+            if "Container #/Trailer" in headers:
+                updates[chr(ord('A') + headers.index("Container #/Trailer"))] = new_container
+            if "Status" in headers:
+                updates[chr(ord('A') + headers.index("Status"))] = new_status
+            if "Unloading/Empty" in headers:
+                updates[chr(ord('A') + headers.index("Unloading/Empty"))] = new_unloading
+            if "CUSTOMER" in headers:
+                updates[chr(ord('A') + headers.index("CUSTOMER"))] = new_customer
+            if "Carrier" in headers:
+                updates[chr(ord('A') + headers.index("Carrier"))] = new_carrier
+            for col_letter, value in updates.items():
+                sheet.update(f"{col_letter}{row_num}", [[value]])
+            st.success(f"{selected_door} updated")
+            st.cache_data.clear()
+            st.rerun()
+
+        if st.button("Clear door", use_container_width=True, key=f"clear_{k}"):
+            sheet = get_sheet()
+            for col_name in ["Container #/Trailer", "Unloading/Empty", "CUSTOMER", "Carrier"]:
+                if col_name in headers:
+                    col = chr(ord('A') + headers.index(col_name))
+                    sheet.update(f"{col}{row_num}", [[""]])
+            if "Status" in headers:
+                status_col = chr(ord('A') + headers.index("Status"))
+                sheet.update(f"{status_col}{row_num}", [["Vacant"]])
+            st.success(f"{selected_door} cleared")
+            st.cache_data.clear()
+            st.rerun()
 
 # --- metrics ---
 total = len(df)
