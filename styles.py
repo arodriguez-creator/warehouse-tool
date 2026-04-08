@@ -5,6 +5,10 @@ GLOBAL_CSS = """
   [data-testid="stSidebar"] .stSelectbox label { color: #ffffff !important; }
   [data-testid="stSidebar"] .stRadio label { color: #ffffff !important; }
   [data-testid="stSidebar"] input { color: #1a2332 !important; }
+  [data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] { background: #ffffff !important; }
+  [data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] * { color: #1a2332 !important; }
+  [data-testid="stSidebar"] .stNumberInput input { color: #1a2332 !important; background: #ffffff !important; }
+  [data-testid="stSidebar"] textarea { color: #1a2332 !important; background: #ffffff !important; }
   [data-testid="stSidebar"] .stButton button {
       background-color: #00c851;
       color: #ffffff !important;
