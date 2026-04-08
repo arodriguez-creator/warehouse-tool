@@ -5,6 +5,17 @@ import json
 from google.oauth2.service_account import Credentials
 
 st.set_page_config(layout="wide")
+st.markdown("""
+<style>
+  [data-testid="stMetric"] {
+      background: #ffffff;
+      border: 1.5px solid #d1d5db;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+</style>
+""", unsafe_allow_html=True)
 st.title("Dock door board")
 st.caption("Live from Brodiaea Operations — Dock_Status tab")
 
