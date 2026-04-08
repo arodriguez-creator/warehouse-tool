@@ -3,21 +3,13 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from styles import GLOBAL_CSS, page_header
 
 st.set_page_config(layout="wide")
-st.markdown("""
-<style>
-  [data-testid="stMetric"] {
-      background: #ffffff;
-      border: 1.5px solid #d1d5db;
-      border-radius: 10px;
-      padding: 1rem 1.25rem;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-  }
-</style>
-""", unsafe_allow_html=True)
-st.title("Inbound containers")
-st.caption("Live from Brodiaea Operations — Inbound tab")
+st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
+page_header("Inbound containers", "Live from Brodiaea Operations — Inbound tab")
 
 def get_creds():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -93,10 +85,8 @@ def get_active_df():
     df = df.sort_values("Arrival date", ascending=False)
     return df
 
-# --- sidebar --- everything inside this block stays in the sidebar
 with st.sidebar:
     st.subheader("Container actions")
-
     df_all = get_active_df()
     container_options = df_all["CONTAINER"].tolist()
 
@@ -104,7 +94,6 @@ with st.sidebar:
         selected_container = st.selectbox("Select container", container_options)
         sel_row = df_all[df_all["CONTAINER"] == selected_container].iloc[0]
         row_num = int(sel_row["_row_num"])
-
         received = sel_row["RECEIVED"] == "TRUE"
         picked = sel_row["PICKED UP"] == "TRUE"
         empty = sel_row["EMPTY"] == "TRUE"
@@ -123,25 +112,25 @@ with st.sidebar:
                 st.success(f"{selected_container} marked empty")
                 st.rerun()
 
-    if received:
-        st.success("Received")
-    else:
-        if st.button("Mark received", type="primary", use_container_width=True):
-            sheet = get_sheet()
-            sheet.update(f"{received_col}{row_num}", [["TRUE"]])
-            st.cache_data.clear()
-            st.success(f"{selected_container} marked received")
-            st.rerun()
+        if received:
+            st.success("Received")
+        else:
+            if st.button("Mark received", type="primary", use_container_width=True):
+                sheet = get_sheet()
+                sheet.update(f"{received_col}{row_num}", [["TRUE"]])
+                st.cache_data.clear()
+                st.success(f"{selected_container} marked received")
+                st.rerun()
 
-    if picked:
-        st.success("Picked up")
-    else:
-        if st.button("Mark picked up", use_container_width=True):
-            sheet = get_sheet()
-            sheet.update(f"{picked_up_col}{row_num}", [["TRUE"]])
-            st.cache_data.clear()
-            st.success(f"{selected_container} marked picked up")
-            st.rerun()
+        if picked:
+            st.success("Picked up")
+        else:
+            if st.button("Mark picked up", use_container_width=True):
+                sheet = get_sheet()
+                sheet.update(f"{picked_up_col}{row_num}", [["TRUE"]])
+                st.cache_data.clear()
+                st.success(f"{selected_container} marked picked up")
+                st.rerun()
 
         st.divider()
         st.markdown("**Edit details**")
@@ -165,9 +154,8 @@ with st.sidebar:
         new_carton = st.number_input("Carton count", min_value=0, step=1, value=int(current_carton) if current_carton.isdigit() else 0)
         new_warehouse = st.text_input("Warehouse", value=current_warehouse if current_warehouse != "nan" else "")
 
-        if st.button("Save changes", type="primary"):
+        if st.button("Save changes", type="primary", use_container_width=True):
             dock_warning = False
-
             if new_dock and new_dock != current_dock:
                 dock_df = load_dock_data()
                 matching = dock_df[dock_df["Door"] == f"Door {new_dock}"] if "Door" in dock_df.columns else pd.DataFrame()
@@ -181,12 +169,9 @@ with st.sidebar:
             if not dock_warning:
                 sheet = get_sheet()
                 updates = {
-                    status_col: new_status,
-                    dock_door_col: new_dock,
-                    trucking_col: new_trucking,
-                    account_col: new_account,
-                    sku_col: str(new_sku),
-                    carton_col: str(new_carton),
+                    status_col: new_status, dock_door_col: new_dock,
+                    trucking_col: new_trucking, account_col: new_account,
+                    sku_col: str(new_sku), carton_col: str(new_carton),
                     warehouse_col: new_warehouse,
                 }
                 for col, val in updates.items():
@@ -199,22 +184,21 @@ with st.sidebar:
                     if not matching.empty:
                         dock_row_num = int(matching.iloc[0]["_row_num"])
                         dock_sheet = get_dock_sheet()
-                        container_col_idx = dock_headers.index("Container #/Trailer") if "Container #/Trailer" in dock_headers else None
-                        dock_status_col_idx = dock_headers.index("Status") if "Status" in dock_headers else None
-                        if container_col_idx is not None:
-                            dock_sheet.update(f"{chr(ord('A') + container_col_idx)}{dock_row_num}", [[selected_container]])
-                        if dock_status_col_idx is not None:
-                            dock_sheet.update(f"{chr(ord('A') + dock_status_col_idx)}{dock_row_num}", [["Occupied"]])
+                        ci = dock_headers.index("Container #/Trailer") if "Container #/Trailer" in dock_headers else None
+                        si = dock_headers.index("Status") if "Status" in dock_headers else None
+                        if ci is not None:
+                            dock_sheet.update(f"{chr(ord('A') + ci)}{dock_row_num}", [[selected_container]])
+                        if si is not None:
+                            dock_sheet.update(f"{chr(ord('A') + si)}{dock_row_num}", [["Occupied"]])
 
                 st.success(f"{selected_container} updated")
                 st.cache_data.clear()
                 st.rerun()
-        else:
-            st.info("No active containers to edit")
+    else:
+        st.info("No active containers to edit")
 
 # --- main page ---
 df = get_active_df()
-
 total = len(df)
 in_dock = df[df["CONTAINER STATUS"] == "In dock"].shape[0]
 not_received = df[df["RECEIVED"] != "TRUE"].shape[0]
@@ -238,19 +222,15 @@ with st.expander("Add new inbound container"):
         fc1, fc2 = st.columns(2)
         new_arrival = fc1.date_input("Arrival date")
         new_container_num = fc2.text_input("Container number")
-
         fc3, fc4 = st.columns(2)
         new_account = fc3.text_input("Account")
         new_trucking = fc4.text_input("Trucking company")
-
         fc5, fc6 = st.columns(2)
         new_status = fc5.selectbox("Container status", ["", "In dock", "picked up", "scheduled"])
         new_dock_door = fc6.text_input("Dock door")
-
         fc7, fc8 = st.columns(2)
         new_sku_count = fc7.number_input("SKU count", min_value=0, step=1)
         new_carton_count = fc8.number_input("Carton count", min_value=0, step=1)
-
         new_warehouse = st.text_input("Warehouse")
         submitted = st.form_submit_button("Add container")
 
@@ -260,18 +240,10 @@ with st.expander("Add new inbound container"):
             else:
                 sheet = get_sheet()
                 new_row = [
-                    new_arrival.strftime("%-m/%-d/%Y"),
-                    new_container_num,
-                    new_account,
-                    new_trucking,
-                    new_status,
-                    new_dock_door,
-                    "", "", "", "", "",
-                    new_warehouse,
-                    "",
-                    str(int(new_sku_count)),
-                    str(int(new_carton_count)),
-                    ""
+                    new_arrival.strftime("%-m/%-d/%Y"), new_container_num,
+                    new_account, new_trucking, new_status, new_dock_door,
+                    "", "", "", "", "", new_warehouse, "",
+                    str(int(new_sku_count)), str(int(new_carton_count)), ""
                 ]
                 sheet.append_row(new_row)
                 st.success(f"Container {new_container_num} added successfully")
@@ -286,14 +258,8 @@ if selected_account != "All":
 display_cols = ["Arrival date", "CONTAINER", "ACCOUNT", "CONTAINER STATUS",
                 "TRUCKING COMPANY", "DOCK DOOR", "SKU Count", "Carton Count",
                 "RECEIVED", "WAREHOUSE"]
-
 display_cols = [c for c in display_cols if c in df.columns]
 df["Arrival date"] = df["Arrival date"].dt.strftime("%m/%d/%Y")
 
-st.dataframe(
-    df[display_cols],
-    use_container_width=True,
-    hide_index=True
-)
-
+st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
 st.caption("Select a container in the sidebar to mark received, picked up, or edit details. Changes write directly to Google Sheets.")

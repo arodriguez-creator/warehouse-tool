@@ -1,31 +1,24 @@
 import gspread
 import pandas as pd
 import streamlit as st
-import json
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from styles import GLOBAL_CSS, page_header
 from google.oauth2.service_account import Credentials
 
 st.set_page_config(layout="wide")
-st.markdown("""
-<style>
-  [data-testid="stMetric"] {
-      background: #ffffff;
-      border: 1.5px solid #d1d5db;
-      border-radius: 10px;
-      padding: 1rem 1.25rem;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-  }
-</style>
-""", unsafe_allow_html=True)
-st.title("Dock door board")
-st.caption("Live from Brodiaea Operations — Dock_Status tab")
+st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
+page_header("Dock door board", "Live from Brodiaea Operations — Dock_Status tab")
 
-@st.cache_data(ttl=60)
-def load_data():
+def get_creds():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds_dict = dict(st.secrets["gcp_service_account"])
     creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    gc = gspread.authorize(creds)
+    return Credentials.from_service_account_info(creds_dict, scopes=scope)
+
+@st.cache_data(ttl=60)
+def load_data():
+    gc = gspread.authorize(get_creds())
     sheet = gc.open("Brodiaea Operations").worksheet("Dock_Status")
     df = pd.DataFrame(sheet.get_all_values())
     df.columns = df.iloc[0]
@@ -35,19 +28,8 @@ def load_data():
     return df
 
 def get_sheet():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    gc = gspread.authorize(creds)
+    gc = gspread.authorize(get_creds())
     return gc.open("Brodiaea Operations").worksheet("Dock_Status")
-
-def get_col_letter(headers, col_name):
-    try:
-        idx = list(headers).index(col_name)
-        return chr(ord('A') + idx)
-    except ValueError:
-        return None
 
 def get_door_type(status, unloading, container):
     status = str(status).strip().lower()
@@ -75,13 +57,10 @@ color_map = {
 df = load_data()
 headers = get_sheet().row_values(1)
 
-# --- sidebar update form ---
 with st.sidebar:
     st.subheader("Update a door")
-
     door_options = df["Door"].tolist() if "Door" in df.columns else [f"Door {i}" for i in range(1, 36)]
     selected_door = st.selectbox("Select door", door_options)
-
     door_row = df[df["Door"] == selected_door].iloc[0] if "Door" in df.columns else None
 
     current_container = str(door_row.get("Container #/Trailer", "")).strip() if door_row is not None else ""
@@ -91,18 +70,16 @@ with st.sidebar:
     current_carrier = str(door_row.get("Carrier", "")).strip() if door_row is not None else ""
 
     new_container = st.text_input("Container / trailer", value=current_container if current_container != "nan" else "")
-    new_status = st.selectbox("Status", ["Vacant", "Occupied"],
-                              index=0 if "vacant" in current_status.lower() else 1)
+    new_status = st.selectbox("Status", ["Vacant", "Occupied"], index=0 if "vacant" in current_status.lower() else 1)
     new_unloading = st.selectbox("Unloading / empty", ["", "Unloading", "Full", "Loading"],
                                  index=["", "Unloading", "Full", "Loading"].index(current_unloading)
                                  if current_unloading in ["", "Unloading", "Full", "Loading"] else 0)
     new_customer = st.text_input("Customer", value=current_customer if current_customer != "nan" else "")
     new_carrier = st.text_input("Carrier", value=current_carrier if current_carrier != "nan" else "")
 
-    if st.button("Save changes", type="primary"):
+    if st.button("Save changes", type="primary", use_container_width=True):
         sheet = get_sheet()
         row_num = int(door_row["_row_num"])
-
         updates = {}
         if "Container #/Trailer" in headers:
             updates[chr(ord('A') + headers.index("Container #/Trailer"))] = new_container
@@ -114,23 +91,21 @@ with st.sidebar:
             updates[chr(ord('A') + headers.index("CUSTOMER"))] = new_customer
         if "Carrier" in headers:
             updates[chr(ord('A') + headers.index("Carrier"))] = new_carrier
-
         for col_letter, value in updates.items():
             sheet.update(f"{col_letter}{row_num}", [[value]])
-
         st.success(f"{selected_door} updated")
         st.cache_data.clear()
         st.rerun()
 
-    if st.button("Clear door"):
+    if st.button("Clear door", use_container_width=True):
         sheet = get_sheet()
         row_num = int(door_row["_row_num"])
         for col_name in ["Container #/Trailer", "Unloading/Empty", "CUSTOMER", "Carrier"]:
             if col_name in headers:
                 col = chr(ord('A') + headers.index(col_name))
                 sheet.update(f"{col}{row_num}", [[""]])
-        status_col = chr(ord('A') + headers.index("Status")) if "Status" in headers else None
-        if status_col:
+        if "Status" in headers:
+            status_col = chr(ord('A') + headers.index("Status"))
             sheet.update(f"{status_col}{row_num}", [["Vacant"]])
         st.success(f"{selected_door} cleared")
         st.cache_data.clear()
@@ -138,7 +113,6 @@ with st.sidebar:
 
 # --- metrics ---
 total = len(df)
-
 def door_type_series(row):
     return get_door_type(row.get("Status", ""), row.get("Unloading/Empty", ""), row.get("Container #/Trailer", ""))
 
@@ -157,7 +131,6 @@ if st.button("Refresh board"):
     st.cache_data.clear()
     st.rerun()
 
-# --- legend ---
 st.markdown("""
 <div style="display:flex;gap:16px;flex-wrap:wrap;margin:1rem 0;">
   <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:#639922;display:inline-block"></span>Vacant</span>
@@ -168,22 +141,17 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# --- door tiles ---
 cols = st.columns(7)
-
 for i, row in df.iterrows():
     door_label = str(row.get("Door", f"Door {i+1}")).strip()
     container = str(row.get("Container #/Trailer", "")).strip()
     status_raw = str(row.get("Status", "")).strip()
     unloading = str(row.get("Unloading/Empty", "")).strip()
-
     door_type = get_door_type(status_raw, unloading, container)
     c = color_map[door_type]
     col = cols[i % 7]
-
     display_name = container if container and container != "nan" else ""
     display_sub = unloading if unloading and unloading != "nan" and door_type != "reserved" else c["label"]
-
     with col:
         st.markdown(f"""
         <div style="background:{c['bg']};border:0.5px solid {c['border']};border-radius:8px;

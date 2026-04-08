@@ -3,22 +3,13 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from styles import GLOBAL_CSS, page_header
 
 st.set_page_config(layout="wide")
-st.title("Outbound shipments")
-st.caption("Live from Brodiaea Operations — MAD & Instaship")
-
-st.markdown("""
-<style>
-  [data-testid="stMetric"] {
-      background: #ffffff;
-      border: 1.5px solid #d1d5db;
-      border-radius: 10px;
-      padding: 1rem 1.25rem;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-  }
-</style>
-""", unsafe_allow_html=True)
+st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
+page_header("Outbound shipments", "Live from Brodiaea Operations — MAD & Instaship")
 
 def get_creds():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -46,14 +37,11 @@ def load_mad():
     sheet = gc.open("Brodiaea Operations").worksheet("Outbound-MAD 2026")
     data = sheet.get_all_values()
     headers = [h.strip() for h in data[1]]
-    rows = data[2:]
-    df = pd.DataFrame(rows, columns=headers)
-    df = df.loc[:, df.columns != '']
+    df = pd.DataFrame(data[2:], columns=headers)
     df.columns = [c.strip() for c in df.columns]
     df["_source"] = "MAD"
     df["_row_num"] = range(3, len(df) + 3)
-    df = df.rename(columns={"CARTONS": "CTN", "READY FOR PU": "READY PU",
-                             "FREIGHT TERMS": "FREIGHT TERMS", "SALES ORDER": "SALES ORDER"})
+    df = df.rename(columns={"CARTONS": "CTN", "READY FOR PU": "READY PU"})
     df["CTN"] = df["CTN"].apply(safe_int)
     df["PALLET TOTAL"] = df["PALLET TOTAL"].apply(safe_int)
     return df
@@ -64,9 +52,7 @@ def load_instaship():
     sheet = gc.open("Brodiaea Operations").worksheet("Outbound-Instaship 2026")
     data = sheet.get_all_values()
     headers = [h.strip() for h in data[1]]
-    rows = data[2:]
-    df = pd.DataFrame(rows, columns=headers)
-    df = df.loc[:, df.columns != '']
+    df = pd.DataFrame(data[2:], columns=headers)
     df.columns = [c.strip() for c in df.columns]
     df["_source"] = "Instaship"
     df["_row_num"] = range(3, len(df) + 3)
@@ -91,9 +77,11 @@ def load_combined():
     shared = ["ACCOUNT", "CARRIER", "DATE", "FREIGHT TERMS", "APPT TIME",
               "CONSIGNEE", "SALES ORDER", "PO", "CTN", "PALLET TOTAL",
               "READY PU", "LOAD #", "PU", "_source", "_row_num"]
-    mad_cols = [c for c in shared if c in mad.columns]
-    insta_cols = [c for c in shared if c in insta.columns]
-    combined = pd.concat([mad[mad_cols], insta[insta_cols]], ignore_index=True)
+    combined = pd.concat(
+        [mad[[c for c in shared if c in mad.columns]],
+         insta[[c for c in shared if c in insta.columns]]],
+        ignore_index=True
+    )
     combined["DATE"] = combined["DATE"].apply(parse_date)
     combined = combined[combined["DATE"].notna()]
     combined = combined[combined["ACCOUNT"].str.strip() != ""]
@@ -104,10 +92,9 @@ today = datetime.today().date()
 tomorrow = today + timedelta(days=1)
 df_today = df[df["DATE"].dt.date == today]
 
-# --- sidebar ---
 with st.sidebar:
     st.subheader("Shipment actions")
-    action = st.radio("Action", ["Edit shipment", "Assign load ID"], label_visibility="collapsed")
+    action = st.radio("Action", ["Edit shipment", "Assign load ID"])
 
     if action == "Edit shipment":
         st.markdown("**Edit shipment**")
@@ -115,36 +102,20 @@ with st.sidebar:
 
         if source_filter == "MAD":
             edit_df = load_mad()
-            edit_df["DATE"] = edit_df["DATE"].apply(parse_date)
-            edit_df = edit_df[edit_df["DATE"].notna()]
-            edit_df = edit_df[edit_df["ACCOUNT"].str.strip() != ""]
-            cutoff = pd.Timestamp(today - timedelta(days=7))
-            edit_df = edit_df[edit_df["DATE"] >= cutoff]
-            so_col = "SALES ORDER"
-            carrier_col = "B"
-            pallets_col = "J"
-            load_col = "L"
-            freight_col = "D"
-            appt_col = "E"
+            carrier_col, pallets_col, load_col, freight_col, appt_col = "B", "J", "L", "D", "E"
             sheet_fn = get_mad_sheet
         else:
             edit_df = load_instaship()
-            edit_df["DATE"] = edit_df["DATE"].apply(parse_date)
-            edit_df = edit_df[edit_df["DATE"].notna()]
-            edit_df = edit_df[edit_df["ACCOUNT"].str.strip() != ""]
-            cutoff = pd.Timestamp(today - timedelta(days=7))
-            edit_df = edit_df[edit_df["DATE"] >= cutoff]
-            so_col = "SALES ORDER"
-            carrier_col = "B"
-            pallets_col = "I"
-            load_col = "K"
-            freight_col = "D"
-            appt_col = None
+            carrier_col, pallets_col, load_col, freight_col, appt_col = "B", "I", "K", "D", None
             sheet_fn = get_insta_sheet
 
+        edit_df["DATE"] = edit_df["DATE"].apply(parse_date)
+        edit_df = edit_df[edit_df["DATE"].notna()]
+        edit_df = edit_df[edit_df["ACCOUNT"].str.strip() != ""]
+        cutoff = pd.Timestamp(today - timedelta(days=7))
+        edit_df = edit_df[edit_df["DATE"] >= cutoff]
         edit_df = edit_df.sort_values("DATE", ascending=False)
-        so_options = edit_df["SALES ORDER"].dropna().tolist()
-        so_options = [s for s in so_options if str(s).strip() != ""]
+        so_options = [s for s in edit_df["SALES ORDER"].dropna().tolist() if str(s).strip() != ""]
 
         if so_options:
             selected_so = st.selectbox("Select sales order", so_options)
@@ -182,7 +153,6 @@ with st.sidebar:
     else:
         st.markdown("**Assign load ID to multiple orders**")
         st.caption("Select orders that share a carrier pickup")
-
         load_source = st.selectbox("Business", ["MAD", "Instaship"])
         new_load_id = st.text_input("Load ID (from carrier)")
 
@@ -201,10 +171,7 @@ with st.sidebar:
         cutoff = pd.Timestamp(today - timedelta(days=7))
         load_df = load_df[load_df["DATE"] >= cutoff]
         load_df = load_df.sort_values("DATE", ascending=False)
-
-        so_list = load_df["SALES ORDER"].dropna().tolist()
-        so_list = [s for s in so_list if str(s).strip() != ""]
-
+        so_list = [s for s in load_df["SALES ORDER"].dropna().tolist() if str(s).strip() != ""]
         selected_orders = st.multiselect("Select sales orders", so_list)
 
         if st.button("Assign load ID", type="primary", use_container_width=True):
@@ -223,33 +190,27 @@ with st.sidebar:
                 st.success(f"Load ID {new_load_id} assigned to {len(selected_orders)} orders")
                 st.rerun()
 
-# --- add new shipment expander ---
+# --- add shipment ---
 with st.expander("Add new shipment"):
     with st.form("new_shipment"):
         fa, fb = st.columns(2)
         new_business = fa.selectbox("Business", ["MAD", "Instaship"])
         new_account = fb.text_input("Account")
-
         fc, fd = st.columns(2)
         new_date = fc.date_input("Date")
         new_carrier = fd.text_input("Carrier")
-
         fe, ff = st.columns(2)
         new_freight = fe.text_input("Freight terms")
         new_consignee = ff.text_input("Consignee")
-
         fg, fh = st.columns(2)
         new_so = fg.text_input("Sales order")
         new_po = fh.text_input("PO")
-
         fi, fj = st.columns(2)
         new_ctn = fi.number_input("Cartons", min_value=0, step=1)
         new_pallets = fj.number_input("Pallets", min_value=0, step=1)
-
         fk, fl = st.columns(2)
         new_load = fk.text_input("Load #")
         new_appt = fl.text_input("Appt time (MAD only)")
-
         submitted = st.form_submit_button("Add shipment")
 
         if submitted:
@@ -259,20 +220,14 @@ with st.expander("Add new shipment"):
                 date_str = new_date.strftime("%-m/%-d/%Y")
                 if new_business == "MAD":
                     sheet = get_mad_sheet()
-                    new_row = [
-                        new_account, new_carrier, date_str,
-                        new_freight, new_appt, new_consignee,
-                        new_so, new_po, str(new_ctn), str(new_pallets),
-                        "", new_load, "", "", ""
-                    ]
+                    new_row = [new_account, new_carrier, date_str, new_freight,
+                               new_appt, new_consignee, new_so, new_po,
+                               str(new_ctn), str(new_pallets), "", new_load, "", "", ""]
                 else:
                     sheet = get_insta_sheet()
-                    new_row = [
-                        new_account, new_carrier, date_str,
-                        new_freight, new_consignee, new_so,
-                        new_po, str(new_ctn), str(new_pallets),
-                        "", new_load, "", "", ""
-                    ]
+                    new_row = [new_account, new_carrier, date_str, new_freight,
+                               new_consignee, new_so, new_po, str(new_ctn),
+                               str(new_pallets), "", new_load, "", "", ""]
                 sheet.append_row(new_row)
                 st.cache_data.clear()
                 st.success(f"Shipment {new_so} added to {new_business}")
@@ -323,8 +278,7 @@ if len(view_df) > 0:
     s3.caption(f"{view_df['PALLET TOTAL'].sum()} pallets")
 
 display_cols = ["_source", "DATE", "ACCOUNT", "CARRIER", "FREIGHT TERMS",
-                "CONSIGNEE", "SALES ORDER", "PO", "CTN",
-                "PALLET TOTAL", "LOAD #", "APPT TIME"]
+                "CONSIGNEE", "SALES ORDER", "PO", "CTN", "PALLET TOTAL", "LOAD #", "APPT TIME"]
 display_cols = [c for c in display_cols if c in view_df.columns]
 view_df["DATE"] = view_df["DATE"].dt.strftime("%m/%d/%Y")
 view_df = view_df.rename(columns={"_source": "Business"})
