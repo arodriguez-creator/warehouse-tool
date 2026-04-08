@@ -77,7 +77,6 @@ def get_active_df():
     df = load_data()
     df["Arrival date"] = df["Arrival date"].apply(parse_date)
     df = df[df["PICKED UP"] != "TRUE"]
-    df = df[df["EMPTY"] != "TRUE"]
     df = df[df["Arrival date"].notna()]
     df = df[df["CONTAINER"].str.strip() != ""]
     cutoff = datetime.today() - timedelta(days=14)

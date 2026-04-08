@@ -23,6 +23,10 @@ GLOBAL_CSS = """
     padding: 1rem 1.25rem;
     border: 1.5px solid #d1d5db;
     box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
   }
   .metric-label { font-size: 12px; color: #6b7280; margin: 0 0 4px; }
   .metric-value { font-size: 26px; font-weight: 500; margin: 0; color: #1a2332; }
