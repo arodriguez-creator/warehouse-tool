@@ -2,7 +2,6 @@ import gspread
 import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
-import json
 from google.oauth2.service_account import Credentials
 
 st.set_page_config(layout="wide")
@@ -45,11 +44,6 @@ def get_dock_sheet():
     gc = gspread.authorize(get_creds())
     return gc.open("Brodiaea Operations").worksheet("Dock_Status")
 
-def mark_column(row_num, col_letter):
-    sheet = get_sheet()
-    sheet.update(f"{col_letter}{row_num}", [["TRUE"]])
-    st.cache_data.clear()
-
 def parse_date(val):
     if not val or str(val).strip() == "":
         return pd.NaT
@@ -60,7 +54,6 @@ def parse_date(val):
             pass
     return pd.to_datetime(val, errors="coerce")
 
-df_raw = load_data()
 all_headers = get_sheet().row_values(1)
 
 def col_letter(col_name):
@@ -77,25 +70,58 @@ sku_col = col_letter("SKU Count")
 carton_col = col_letter("Carton Count")
 warehouse_col = col_letter("WAREHOUSE")
 
-# --- sidebar: edit existing container ---
+def get_active_df():
+    df = load_data()
+    df["Arrival date"] = df["Arrival date"].apply(parse_date)
+    df = df[df["PICKED UP"] != "TRUE"]
+    df = df[df["EMPTY"] != "TRUE"]
+    df = df[df["Arrival date"].notna()]
+    df = df[df["CONTAINER"].str.strip() != ""]
+    cutoff = datetime.today() - timedelta(days=14)
+    df = df[df["Arrival date"] >= cutoff]
+    df = df.sort_values("Arrival date", ascending=False)
+    return df
+
+# --- sidebar ---
 with st.sidebar:
-    st.subheader("Edit container")
+    st.subheader("Container actions")
 
-    df_all = load_data()
-    df_all["Arrival date"] = df_all["Arrival date"].apply(parse_date)
-    df_all = df_all[df_all["CONTAINER"].str.strip() != ""]
-    df_all = df_all[df_all["Arrival date"].notna()]
-    cutoff_all = datetime.today() - timedelta(days=14)
-    df_all = df_all[df_all["Arrival date"] >= cutoff_all]
-    df_all = df_all[df_all["PICKED UP"] != "TRUE"]
-    df_all = df_all.sort_values("Arrival date", ascending=False)
-
+    df_all = get_active_df()
     container_options = df_all["CONTAINER"].tolist()
 
     if container_options:
         selected_container = st.selectbox("Select container", container_options)
         sel_row = df_all[df_all["CONTAINER"] == selected_container].iloc[0]
         row_num = int(sel_row["_row_num"])
+
+        received = sel_row["RECEIVED"] == "TRUE"
+        picked = sel_row["PICKED UP"] == "TRUE"
+
+        st.markdown("**Quick actions**")
+        qc1, qc2 = st.columns(2)
+
+        if received:
+            qc1.success("Received")
+        else:
+            if qc1.button("Mark received", type="primary"):
+                sheet = get_sheet()
+                sheet.update(f"{received_col}{row_num}", [["TRUE"]])
+                st.cache_data.clear()
+                st.success(f"{selected_container} marked received")
+                st.rerun()
+
+        if picked:
+            qc2.success("Picked up")
+        else:
+            if qc2.button("Mark picked up"):
+                sheet = get_sheet()
+                sheet.update(f"{picked_up_col}{row_num}", [["TRUE"]])
+                st.cache_data.clear()
+                st.success(f"{selected_container} marked picked up")
+                st.rerun()
+
+        st.divider()
+        st.markdown("**Edit details**")
 
         current_status = str(sel_row.get("CONTAINER STATUS", "")).strip()
         current_dock = str(sel_row.get("DOCK DOOR", "")).strip()
@@ -119,7 +145,6 @@ with st.sidebar:
         if st.button("Save changes", type="primary"):
             dock_warning = False
 
-            # check if dock door is already occupied
             if new_dock and new_dock != current_dock:
                 dock_df = load_dock_data()
                 matching = dock_df[dock_df["Door"] == f"Door {new_dock}"] if "Door" in dock_df.columns else pd.DataFrame()
@@ -144,7 +169,6 @@ with st.sidebar:
                 for col, val in updates.items():
                     sheet.update(f"{col}{row_num}", [[val]])
 
-                # if dock door assigned, update Dock_Status tab too
                 if new_dock:
                     dock_df = load_dock_data()
                     dock_headers = get_dock_sheet().row_values(1)
@@ -166,17 +190,8 @@ with st.sidebar:
         st.info("No active containers to edit")
 
 # --- main page ---
-df = load_data()
-df["Arrival date"] = df["Arrival date"].apply(parse_date)
-df = df[df["PICKED UP"] != "TRUE"]
-df = df[df["EMPTY"] != "TRUE"]
-df = df[df["Arrival date"].notna()]
-df = df[df["CONTAINER"].str.strip() != ""]
-cutoff = datetime.today() - timedelta(days=14)
-df = df[df["Arrival date"] >= cutoff]
-df = df.sort_values("Arrival date", ascending=False)
+df = get_active_df()
 
-# metrics
 total = len(df)
 in_dock = df[df["CONTAINER STATUS"] == "In dock"].shape[0]
 not_received = df[df["RECEIVED"] != "TRUE"].shape[0]
@@ -193,6 +208,7 @@ if st.button("Refresh data"):
     st.rerun()
 
 st.subheader("Active container log")
+st.caption("Click any column header to sort")
 
 with st.expander("Add new inbound container"):
     with st.form("new_container"):
@@ -244,41 +260,17 @@ selected_account = st.selectbox("Filter by account", accounts)
 if selected_account != "All":
     df = df[df["ACCOUNT"] == selected_account]
 
-header = st.columns([1.5, 2, 1.5, 1.5, 1.5, 1, 1])
-header[0].markdown("**Arrival date**")
-header[1].markdown("**Container**")
-header[2].markdown("**Account**")
-header[3].markdown("**Status**")
-header[4].markdown("**Carrier**")
-header[5].markdown("**Received**")
-header[6].markdown("**Picked up**")
+display_cols = ["Arrival date", "CONTAINER", "ACCOUNT", "CONTAINER STATUS",
+                "TRUCKING COMPANY", "DOCK DOOR", "SKU Count", "Carton Count",
+                "RECEIVED", "WAREHOUSE"]
 
-st.divider()
+display_cols = [c for c in display_cols if c in df.columns]
+df["Arrival date"] = df["Arrival date"].dt.strftime("%m/%d/%Y")
 
-for _, row in df.iterrows():
-    c1, c2, c3, c4, c5, c6, c7 = st.columns([1.5, 2, 1.5, 1.5, 1.5, 1, 1])
-    c1.write(str(row["Arrival date"])[:10])
-    c2.write(row["CONTAINER"])
-    c3.write(row["ACCOUNT"])
-    c4.write(row["CONTAINER STATUS"])
-    c5.write(row.get("TRUCKING COMPANY", ""))
+st.dataframe(
+    df[display_cols],
+    use_container_width=True,
+    hide_index=True
+)
 
-    received = row["RECEIVED"] == "TRUE"
-    picked = row["PICKED UP"] == "TRUE"
-    row_num = int(row["_row_num"])
-
-    if received:
-        c6.success("Done")
-    else:
-        if c6.button("Received", key=f"rec_{row_num}"):
-            mark_column(row_num, received_col)
-            st.rerun()
-
-    if picked:
-        c7.success("Done")
-    else:
-        if c7.button("Picked up", key=f"pick_{row_num}"):
-            mark_column(row_num, picked_up_col)
-            st.rerun()
-
-st.caption("Changes write directly to Google Sheets. Refreshes every 60 seconds or on action.")
+st.caption("Select a container in the sidebar to mark received, picked up, or edit details. Changes write directly to Google Sheets.")
