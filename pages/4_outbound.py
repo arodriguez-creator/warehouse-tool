@@ -128,6 +128,7 @@ with st.sidebar:
         cutoff = pd.Timestamp(today - timedelta(days=7))
         edit_df = edit_df[edit_df["DATE"] >= cutoff]
         edit_df = edit_df.sort_values("DATE", ascending=False)
+        edit_df = edit_df[edit_df["PU"].astype(str).str.strip() != "TRUE"]
         so_options = [s for s in edit_df["SALES ORDER"].dropna().tolist() if str(s).strip() != ""]
 
         if so_options:
