@@ -31,6 +31,9 @@ def safe_int(val):
     except:
         return 0
 
+def clean(val):
+    return "" if not val or str(val).strip() == "nan" else str(val).strip()
+
 @st.cache_data(ttl=120)
 def load_mad():
     gc = gspread.authorize(get_creds())
@@ -92,21 +95,31 @@ today = datetime.today().date()
 tomorrow = today + timedelta(days=1)
 df_today = df[df["DATE"].dt.date == today]
 
+# --- sidebar ---
 with st.sidebar:
     st.subheader("Shipment actions")
-    action = st.radio("Action", ["Edit shipment", "Assign load ID"])
+    action = st.radio("Action", ["Edit / Bulk update", "Assign load ID"])
 
-    if action == "Edit shipment":
-        st.markdown("**Edit shipment**")
+    if action == "Edit / Bulk update":
         source_filter = st.selectbox("Business", ["MAD", "Instaship"])
 
         if source_filter == "MAD":
             edit_df = load_mad()
-            carrier_col, pallets_col, load_col, freight_col, appt_col = "B", "J", "L", "D", "E"
+            carrier_col = "B"
+            freight_col = "D"
+            appt_col = "E"
+            pallets_col = "J"
+            load_col = "L"
+            pu_col = "M"
             sheet_fn = get_mad_sheet
         else:
             edit_df = load_instaship()
-            carrier_col, pallets_col, load_col, freight_col, appt_col = "B", "I", "K", "D", None
+            carrier_col = "B"
+            freight_col = "D"
+            appt_col = None
+            pallets_col = "I"
+            load_col = "K"
+            pu_col = "L"
             sheet_fn = get_insta_sheet
 
         edit_df["DATE"] = edit_df["DATE"].apply(parse_date)
@@ -118,50 +131,95 @@ with st.sidebar:
         so_options = [s for s in edit_df["SALES ORDER"].dropna().tolist() if str(s).strip() != ""]
 
         if so_options:
-            selected_so = st.selectbox("Select sales order", so_options)
-            sel_row = edit_df[edit_df["SALES ORDER"] == selected_so].iloc[0]
-            row_num = int(sel_row["_row_num"])
+            selected_orders = st.multiselect(
+                "Select sales orders",
+                so_options,
+                help="Select one to edit details, or multiple for bulk actions"
+            )
 
-            current_carrier = str(sel_row.get("CARRIER", "")).strip()
-            current_pallets = sel_row.get("PALLET TOTAL", 0)
-            current_load = str(sel_row.get("LOAD #", "")).strip()
-            current_freight = str(sel_row.get("FREIGHT TERMS", "")).strip()
-            current_appt = str(sel_row.get("APPT TIME", "")).strip()
+            if selected_orders:
+                is_bulk = len(selected_orders) > 1
+                sel_rows = edit_df[edit_df["SALES ORDER"].isin(selected_orders)]
 
-            new_carrier = st.text_input("Carrier", value=current_carrier if current_carrier != "nan" else "")
-            new_freight = st.text_input("Freight terms", value=current_freight if current_freight != "nan" else "")
-            if appt_col:
-                new_appt = st.text_input("Appt time", value=current_appt if current_appt != "nan" else "")
-            new_pallets = st.number_input("Pallet total", min_value=0, step=1,
-                                          value=int(current_pallets) if str(current_pallets).isdigit() else 0)
-            new_load = st.text_input("Load #", value=current_load if current_load != "nan" else "")
+                if is_bulk:
+                    # bulk mode — show count and shared fields only
+                    st.caption(f"{len(selected_orders)} orders selected")
+                    st.markdown("**Bulk update fields**")
+                    st.caption("Leave blank to skip that field")
 
-            if st.button("Save changes", type="primary", use_container_width=True):
-                sheet = sheet_fn()
-                sheet.update(f"{carrier_col}{row_num}", [[new_carrier]])
-                sheet.update(f"{freight_col}{row_num}", [[new_freight]])
-                sheet.update(f"{pallets_col}{row_num}", [[str(new_pallets)]])
-                sheet.update(f"{load_col}{row_num}", [[new_load]])
-                if appt_col:
-                    sheet.update(f"{appt_col}{row_num}", [[new_appt]])
-                st.cache_data.clear()
-                st.success(f"{selected_so} updated")
-                st.rerun()
+                    bulk_carrier = st.text_input("Set carrier (all)", key="bulk_carrier")
+                    bulk_load = st.text_input("Set load # (all)", key="bulk_load")
+                    bulk_pallets_str = st.text_input("Set pallets (all)", key="bulk_pallets")
 
-            st.divider()
-            pu_col = "M" if source_filter == "MAD" else "L"
-            current_pu = str(sel_row.get("PU", "")).strip()
-            is_picked_up = current_pu == "TRUE"
+                    st.divider()
+                    mark_pu = st.checkbox("Mark all as picked up", key="bulk_pu")
 
-            if is_picked_up:
-                st.success("Picked up ✓")
+                    if st.button("Apply to all selected", type="primary", use_container_width=True):
+                        sheet = sheet_fn()
+                        updated = 0
+                        for _, row in sel_rows.iterrows():
+                            rn = int(row["_row_num"])
+                            if bulk_carrier.strip():
+                                sheet.update(f"{carrier_col}{rn}", [[bulk_carrier.strip()]])
+                            if bulk_load.strip():
+                                sheet.update(f"{load_col}{rn}", [[bulk_load.strip()]])
+                            if bulk_pallets_str.strip().isdigit():
+                                sheet.update(f"{pallets_col}{rn}", [[bulk_pallets_str.strip()]])
+                            if mark_pu:
+                                sheet.update(f"{pu_col}{rn}", [["TRUE"]])
+                            updated += 1
+                        st.cache_data.clear()
+                        st.success(f"Updated {updated} shipments")
+                        st.rerun()
+
+                else:
+                    # single mode — full edit form with pre-filled values
+                    selected_so = selected_orders[0]
+                    sel_row = sel_rows.iloc[0]
+                    row_num = int(sel_row["_row_num"])
+                    k = selected_so.replace(" ", "_")
+
+                    current_carrier = clean(sel_row.get("CARRIER", ""))
+                    current_pallets = sel_row.get("PALLET TOTAL", 0)
+                    current_load = clean(sel_row.get("LOAD #", ""))
+                    current_freight = clean(sel_row.get("FREIGHT TERMS", ""))
+                    current_appt = clean(sel_row.get("APPT TIME", ""))
+                    is_picked_up = str(sel_row.get("PU", "")).strip() == "TRUE"
+
+                    st.markdown("**Edit details**")
+                    new_carrier = st.text_input("Carrier", value=current_carrier, key=f"carrier_{k}")
+                    new_freight = st.text_input("Freight terms", value=current_freight, key=f"freight_{k}")
+                    if appt_col:
+                        new_appt = st.text_input("Appt time", value=current_appt, key=f"appt_{k}")
+                    new_pallets = st.number_input("Pallet total", min_value=0, step=1,
+                                                   value=int(current_pallets) if str(current_pallets).isdigit() else 0,
+                                                   key=f"pallets_{k}")
+                    new_load = st.text_input("Load #", value=current_load, key=f"load_{k}")
+
+                    if st.button("Save changes", type="primary", use_container_width=True, key=f"save_{k}"):
+                        sheet = sheet_fn()
+                        sheet.update(f"{carrier_col}{row_num}", [[new_carrier]])
+                        sheet.update(f"{freight_col}{row_num}", [[new_freight]])
+                        sheet.update(f"{pallets_col}{row_num}", [[str(new_pallets)]])
+                        sheet.update(f"{load_col}{row_num}", [[new_load]])
+                        if appt_col:
+                            sheet.update(f"{appt_col}{row_num}", [[new_appt]])
+                        st.cache_data.clear()
+                        st.success(f"{selected_so} updated")
+                        st.rerun()
+
+                    st.divider()
+                    if is_picked_up:
+                        st.success("Picked up ✓")
+                    else:
+                        if st.button("Mark picked up", use_container_width=True, key=f"pu_{k}"):
+                            sheet = sheet_fn()
+                            sheet.update(f"{pu_col}{row_num}", [["TRUE"]])
+                            st.cache_data.clear()
+                            st.success(f"{selected_so} marked picked up")
+                            st.rerun()
             else:
-                if st.button("Mark picked up", use_container_width=True):
-                    sheet = sheet_fn()
-                    sheet.update(f"{pu_col}{row_num}", [["TRUE"]])
-                    st.cache_data.clear()
-                    st.success(f"{selected_so} marked picked up")
-                    st.rerun()
+                st.caption("Select one or more sales orders above")
         else:
             st.info("No shipments found in the last 7 days")
 
@@ -187,22 +245,22 @@ with st.sidebar:
         load_df = load_df[load_df["DATE"] >= cutoff]
         load_df = load_df.sort_values("DATE", ascending=False)
         so_list = [s for s in load_df["SALES ORDER"].dropna().tolist() if str(s).strip() != ""]
-        selected_orders = st.multiselect("Select sales orders", so_list)
+        selected_orders_load = st.multiselect("Select sales orders", so_list)
 
         if st.button("Assign load ID", type="primary", use_container_width=True):
             if not new_load_id:
                 st.error("Enter a load ID first")
-            elif not selected_orders:
+            elif not selected_orders_load:
                 st.error("Select at least one order")
             else:
                 sheet = sheet_fn()
-                for so in selected_orders:
+                for so in selected_orders_load:
                     match = load_df[load_df["SALES ORDER"] == so]
                     if not match.empty:
                         rn = int(match.iloc[0]["_row_num"])
                         sheet.update(f"{load_col}{rn}", [[new_load_id]])
                 st.cache_data.clear()
-                st.success(f"Load ID {new_load_id} assigned to {len(selected_orders)} orders")
+                st.success(f"Load ID {new_load_id} assigned to {len(selected_orders_load)} orders")
                 st.rerun()
 
 # --- add shipment ---
@@ -293,7 +351,8 @@ if len(view_df) > 0:
     s3.caption(f"{view_df['PALLET TOTAL'].sum()} pallets")
 
 display_cols = ["_source", "DATE", "ACCOUNT", "CARRIER", "FREIGHT TERMS",
-                "CONSIGNEE", "SALES ORDER", "PO", "CTN", "PALLET TOTAL", "LOAD #","PU", "APPT TIME"]
+                "CONSIGNEE", "SALES ORDER", "PO", "CTN", "PALLET TOTAL",
+                "LOAD #", "PU", "APPT TIME"]
 display_cols = [c for c in display_cols if c in view_df.columns]
 view_df["DATE"] = view_df["DATE"].dt.strftime("%m/%d/%Y")
 view_df = view_df.rename(columns={"_source": "Business"})
