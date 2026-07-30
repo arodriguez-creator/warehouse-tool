@@ -147,6 +147,21 @@ with st.sidebar:
                 st.cache_data.clear()
                 st.success(f"{selected_so} updated")
                 st.rerun()
+
+            st.divider()
+            pu_col = "M" if source_filter == "MAD" else "L"
+            current_pu = str(sel_row.get("PU", "")).strip()
+            is_picked_up = current_pu == "TRUE"
+
+            if is_picked_up:
+                st.success("Picked up ✓")
+            else:
+                if st.button("Mark picked up", use_container_width=True):
+                    sheet = sheet_fn()
+                    sheet.update(f"{pu_col}{row_num}", [["TRUE"]])
+                    st.cache_data.clear()
+                    st.success(f"{selected_so} marked picked up")
+                    st.rerun()
         else:
             st.info("No shipments found in the last 7 days")
 
@@ -278,7 +293,7 @@ if len(view_df) > 0:
     s3.caption(f"{view_df['PALLET TOTAL'].sum()} pallets")
 
 display_cols = ["_source", "DATE", "ACCOUNT", "CARRIER", "FREIGHT TERMS",
-                "CONSIGNEE", "SALES ORDER", "PO", "CTN", "PALLET TOTAL", "LOAD #", "APPT TIME"]
+                "CONSIGNEE", "SALES ORDER", "PO", "CTN", "PALLET TOTAL", "LOAD #","PU", "APPT TIME"]
 display_cols = [c for c in display_cols if c in view_df.columns]
 view_df["DATE"] = view_df["DATE"].dt.strftime("%m/%d/%Y")
 view_df = view_df.rename(columns={"_source": "Business"})
