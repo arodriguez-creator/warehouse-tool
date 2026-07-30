@@ -64,8 +64,7 @@ with st.sidebar:
     st.subheader("Update a door")
     door_options = df["Door"].tolist() if "Door" in df.columns else [f"Door {i}" for i in range(1, 36)]
     selected_door = st.selectbox("Select door", door_options, key="door_select")
-    st.write(f"Rows matching: {len(df[df['Door'] == selected_door])}")
-    st.write(f"Door col sample: {df['Door'].tolist()[:3]}")
+   
 
     door_row = df[df["Door"] == selected_door].iloc[0] if "Door" in df.columns and not df[df["Door"] == selected_door].empty else None
 
