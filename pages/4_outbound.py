@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from styles import GLOBAL_CSS, page_header
-from auth import require_auth
+from auth import require_auth, show_user
 require_auth()
 show_user()
 
