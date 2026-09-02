@@ -67,8 +67,17 @@ with st.sidebar:
 
         st.markdown("**Quick actions**")
 
-        if empty:
+       if empty:
             st.success("Container empty ✓")
+            if st.button("Unmark empty", use_container_width=True, key=f"unempty_{k}"):
+                db = get_db()
+                db.table("containers").update({
+                    "empty": False,
+                    "empty_timestamp": None
+                }).eq("id", row_id).execute()
+                st.cache_data.clear()
+                st.success(f"{selected_container} unmarked")
+                st.rerun()
         else:
             if st.button("Mark empty", type="primary", use_container_width=True, key=f"empty_{k}"):
                 db = get_db()
