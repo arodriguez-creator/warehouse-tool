@@ -21,7 +21,7 @@ tomorrow = today + timedelta(days=1)
 def clean(val):
     return "" if not val or str(val) == "nan" or val is None else str(val).strip()
 
-@st.cache_data(ttl=1)
+@st.cache_data(ttl=60)
 def load_pending():
     db = get_db()
     result = db.table("amazon_pickups")\
@@ -221,7 +221,7 @@ fc1, fc2 = st.columns(2)
 carrier_filter = fc1.selectbox("Carrier", ["All", "AMZX", "EXLA", "CTII", "TFIN", "AACT", "XJLW"])
 
 view_df = load_view(date_filter, carrier_filter if carrier_filter != "All" else None)
-st.write(view_df["pickup_date"].head())
+st.write(view_df[["sales_order", "pickup_date"]].head())
 
 
 if not view_df.empty:
