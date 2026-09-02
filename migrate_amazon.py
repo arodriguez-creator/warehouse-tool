@@ -10,7 +10,7 @@ creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
 gc = gspread.authorize(creds)
 
 SUPABASE_URL = "https://rjwlvflwncltvicodoqj.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqd2x2Zmx3bmNsdHZpY29kb3FqIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODMwNDA2NSwiZXhwIjoyMTAzODgwMDY1fQ.w0qhh3nrmF06NxCzubVuHwXaCce56rAz6Enn_2iCdVA"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqd2x2Zmx3bmNsdHZpY29kb3FqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMDQwNjUsImV4cCI6MjEwMzg4MDA2NX0.8D3ufML8f8nOTnPqlqkmRuZgLsRUHNk0YuU0eQZm3Ic"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def parse_date(val):
@@ -36,34 +36,35 @@ def clean(val):
     v = str(val).strip()
     return "" if v in ["nan", "None", ""] else v
 
-print("Migrating Amazon pickups...")
+print("Reading Amazon pickups sheet...")
 sheet = gc.open("SAKAR Amazon Pick ups").worksheet("PICK UPS 26'")
 data = sheet.get_all_values()
 headers = [h.strip() for h in data[0]]
 rows = data[1:]
 
-batch = []
+print(f"Headers: {headers[:11]}")
+
+updated = 0
+skipped = 0
+
 for row in rows:
     r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
     so = clean(r.get("Sales order", ""))
     if not so:
+        skipped += 1
         continue
-    batch.append({
-        "sales_order": so,
-        "arn": clean(r.get("ARN#", "")),
-        "carrier": clean(r.get("CARRIER", "")),
-        "pallets": to_int(r.get("Pallets", 0)),
-        "picked": to_bool(r.get("Picked", "")),
-        "ready": to_bool(r.get("Ready", "")),
-        "bol_printed": to_bool(r.get("Printed BOL & pallet labels", "")),
-        "pickup_date": parse_date(r.get("Pick up date", "")),
-        "picked_up": to_bool(r.get("Picked up", "")),
-        "cartons": to_int(r.get("Cartons", 0)),
-        "notes": clean(r.get("Notes (reason for trouble)", "")),
-    })
+    
+    pickup_date = parse_date(r.get("Pick up date", ""))
+    
+    if pickup_date:
+        result = supabase.table("amazon_pickups")\
+            .update({"pickup_date": pickup_date})\
+            .eq("sales_order", so)\
+            .execute()
+        updated += 1
+    else:
+        skipped += 1
 
-if batch:
-    supabase.table("amazon_pickups").insert(batch).execute()
-    print(f"  inserted {len(batch)} Amazon pickup rows")
-
+print(f"Updated: {updated} rows")
+print(f"Skipped: {skipped} rows (no date)")
 print("Done!")

@@ -44,7 +44,7 @@ def load_view(date_filter, carrier_filter):
     elif date_filter == "tomorrow":
         query = query.eq("pickup_date", tomorrow.strftime("%Y-%m-%d"))
     elif date_filter == "pending":
-        query = query.eq("picked_up", False)
+        query = query.eq("picked_up", False).not_.is_("pickup_date", "null")
     elif date_filter == "last30":
         cutoff = (today - timedelta(days=30)).strftime("%Y-%m-%d")
         query = query.gte("pickup_date", cutoff)
@@ -221,7 +221,7 @@ fc1, fc2 = st.columns(2)
 carrier_filter = fc1.selectbox("Carrier", ["All", "AMZX", "EXLA", "CTII", "TFIN", "AACT", "XJLW"])
 
 view_df = load_view(date_filter, carrier_filter if carrier_filter != "All" else None)
-st.write(view_df[["sales_order", "pickup_date"]].head())
+
 
 
 if not view_df.empty:
