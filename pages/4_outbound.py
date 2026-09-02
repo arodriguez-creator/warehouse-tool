@@ -16,8 +16,7 @@ page_header("Outbound shipments", "Live from Supabase — MAD & Instaship")
 def clean(val):
     return "" if not val or str(val) == "nan" or val is None else str(val).strip()
 
-from datetime import timezone
-today = datetime.now(timezone.utc).date()
+today = datetime.today().date()
 tomorrow = today + timedelta(days=1)
 
 @st.cache_data(ttl=120)
