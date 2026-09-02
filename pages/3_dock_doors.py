@@ -41,8 +41,12 @@ color_map = {
 @st.cache_data(ttl=60)
 def load_data():
     db = get_db()
-    result = db.table("dock_status").select("*").order("door").execute()
-    return pd.DataFrame(result.data)
+    result = db.table("dock_status").select("*").execute()
+    df = pd.DataFrame(result.data)
+    if not df.empty:
+        df["_door_num"] = df["door"].str.extract(r"(\d+)").astype(int)
+        df = df.sort_values("_door_num").drop(columns=["_door_num"])
+    return df
 
 df = load_data()
 
