@@ -72,6 +72,7 @@ with st.sidebar:
         else:
             if st.button("Mark empty", type="primary", use_container_width=True, key=f"empty_{k}"):
                 db = get_db()
+                pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
                 db.table("containers").update({
                     "empty": True,
                     "empty_timestamp": datetime.now(pacific).strftime("%Y-%m-%d")
@@ -231,8 +232,8 @@ if not df.empty:
         df = df[df["account"] == selected_account]
 
     display_cols = ["arrival_date", "container", "account", "container_status",
-                    "trucking_company", "dock_door", "sku_count", "carton_count",
-                    "received", "warehouse"]
+                "trucking_company", "dock_door", "sku_count", "carton_count",
+                "empty", "received", "warehouse"]
     display_cols = [c for c in display_cols if c in df.columns]
     df["arrival_date"] = df["arrival_date"].dt.strftime("%m/%d/%Y")
 

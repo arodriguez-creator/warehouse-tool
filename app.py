@@ -82,9 +82,12 @@ if not active.empty:
     active["arrival_date_only"] = active["arrival_date"].dt.date
     active["days_since_arrival"] = (pd.Timestamp(today) - active["arrival_date"]).dt.days
     active["days_since_empty"] = active.apply(
-        lambda r: (pd.Timestamp(today) - r["empty_timestamp"]).days
-        if pd.notna(r["empty_timestamp"]) else None, axis=1
-    )
+    lambda r: (pd.Timestamp(today) - r["empty_timestamp"]).days
+    if pd.notna(r["empty_timestamp"])
+    else (pd.Timestamp(today) - r["arrival_date"]).days
+    if r["empty"] == True else None, axis=1
+)
+    
     unload_breached = active[(active["empty"] != True) & (active["days_since_arrival"] >= 3)]
     unload_at_risk = active[(active["empty"] != True) & (active["days_since_arrival"] == 2)]
     receive_breached = active[(active["empty"] == True) & (active["received"] != True) & (active["days_since_empty"] >= 2)]
