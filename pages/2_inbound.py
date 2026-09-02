@@ -67,7 +67,7 @@ with st.sidebar:
 
         st.markdown("**Quick actions**")
 
-       if empty:
+        if empty:
             st.success("Container empty ✓")
             if st.button("Unmark empty", use_container_width=True, key=f"unempty_{k}"):
                 db = get_db()
