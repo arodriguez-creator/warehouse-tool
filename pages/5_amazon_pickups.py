@@ -31,7 +31,7 @@ def load_pending():
         .execute()
     df = pd.DataFrame(result.data)
     if not df.empty:
-        df["pickup_date"] = pd.to_datetime(df["pickup_date"], errors="coerce")
+        df["pickup_date"] = pd.to_datetime(df["pickup_date"], errors="coerce").dt.tz_localize(None)
     return df
 
 @st.cache_data(ttl=60)
@@ -55,7 +55,7 @@ def load_view(date_filter, carrier_filter):
     result = query.order("pickup_date", desc=True).execute()
     df = pd.DataFrame(result.data)
     if not df.empty:
-        df["pickup_date"] = pd.to_datetime(df["pickup_date"], errors="coerce")
+        df["pickup_date"] = pd.to_datetime(df["pickup_date"], errors="coerce").dt.tz_localize(None)
     return df
 
 pending_df = load_pending()
@@ -222,7 +222,7 @@ carrier_filter = fc1.selectbox("Carrier", ["All", "AMZX", "EXLA", "CTII", "TFIN"
 view_df = load_view(date_filter, carrier_filter if carrier_filter != "All" else None)
 
 if not view_df.empty:
-    view_df["pickup_date"] = view_df["pickup_date"].dt.strftime("%m/%d/%Y")
+    view_df["pickup_date"] = view_df["pickup_date"].apply(lambda x: pd.to_datetime(x).strftime("%m/%d/%Y") if pd.notna(x) else "")
 
     st.caption(f"{len(view_df)} orders · {int(view_df['pallets'].sum())} pallets · {int(view_df['cartons'].sum())} cartons")
 
