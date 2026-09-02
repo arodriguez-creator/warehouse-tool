@@ -7,6 +7,7 @@ from styles import GLOBAL_CSS, page_header
 from google.oauth2.service_account import Credentials
 from auth import require_auth
 require_auth()
+show_user()
 
 st.set_page_config(layout="wide")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)

@@ -63,3 +63,9 @@ def get_supabase_client():
             st.session_state.get("refresh_token", "")
         )
     return client
+
+def show_user():
+    with st.sidebar:
+        st.caption(f"👤 {st.session_state['user'].email}")
+        if st.button("Sign out", use_container_width=True):
+            logout()
