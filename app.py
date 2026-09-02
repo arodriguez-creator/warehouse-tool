@@ -1,40 +1,23 @@
-import gspread
 import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
-from google.oauth2.service_account import Credentials
+import zoneinfo
 import sys, os
 sys.path.append(os.path.dirname(__file__))
 from styles import GLOBAL_CSS, page_header
-from auth import require_auth, logout
+from auth import require_auth, logout, get_db
+
 require_auth()
-import zoneinfo
+
+pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
+today = datetime.now(pacific).date()
+tomorrow = today + timedelta(days=1)
+today_str = today.strftime("%Y-%m-%d")
+tomorrow_str = tomorrow.strftime("%Y-%m-%d")
+cutoff_str = (today - timedelta(days=14)).strftime("%Y-%m-%d")
 
 st.set_page_config(page_title="Brodiaea Operations", layout="wide", page_icon="📦")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
-
-def get_creds():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-    return Credentials.from_service_account_info(creds_dict, scopes=scope)
-
-def safe_int(val):
-    try:
-        return int(str(val).replace(",", "").strip())
-    except:
-        return 0
-
-def parse_date(val):
-    if not val or str(val).strip() == "":
-        return pd.NaT
-    for fmt in ["%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%-m/%-d/%Y",
-                "%-m/%-d/%y", "%m/%d/%Y %H:%M:%S", "%m/%d/%y %H:%M:%S"]:
-        try:
-            return pd.to_datetime(val, format=fmt)
-        except:
-            pass
-    return pd.to_datetime(val, errors="coerce")
 
 def compact_table(rows, columns, empty_msg="No data"):
     if not rows:
@@ -56,102 +39,74 @@ def compact_table(rows, columns, empty_msg="No data"):
     </div>""", unsafe_allow_html=True)
 
 @st.cache_data(ttl=300)
-def load_inbound():
-    gc = gspread.authorize(get_creds())
-    sheet = gc.open("Brodiaea Operations").worksheet("Inbound")
-    df = pd.DataFrame(sheet.get_all_values())
-    df.columns = df.iloc[0]
-    df = df[1:].reset_index(drop=True)
-    df = df.loc[:, df.columns != '']
+def load_active_containers():
+    db = get_db()
+    result = db.table("containers")\
+        .select("*")\
+        .eq("picked_up", False)\
+        .gte("arrival_date", cutoff_str)\
+        .execute()
+    df = pd.DataFrame(result.data)
+    if df.empty:
+        return df
+    df["arrival_date"] = pd.to_datetime(df["arrival_date"], errors="coerce")
+    df["empty_timestamp"] = pd.to_datetime(df["empty_timestamp"], errors="coerce")
     return df
 
 @st.cache_data(ttl=60)
 def load_dock():
-    gc = gspread.authorize(get_creds())
-    sheet = gc.open("Brodiaea Operations").worksheet("Dock_Status")
-    df = pd.DataFrame(sheet.get_all_values())
-    df.columns = df.iloc[0]
-    df = df[1:].reset_index(drop=True)
-    df = df.loc[:, df.columns != '']
-    return df
+    db = get_db()
+    result = db.table("dock_status").select("*").order("door").execute()
+    return pd.DataFrame(result.data)
 
 @st.cache_data(ttl=120)
-def load_outbound():
-    gc = gspread.authorize(get_creds())
-    mad = gc.open("Brodiaea Operations").worksheet("Outbound-MAD 2026")
-    mad_data = mad.get_all_values()
-    mad_headers = [h.strip() for h in mad_data[1]]
-    mad_df = pd.DataFrame(mad_data[2:], columns=mad_headers)
-    mad_df.columns = [c.strip() for c in mad_df.columns]
-    mad_df["_source"] = "MAD"
-    mad_df = mad_df.rename(columns={"CARTONS": "CTN", "READY FOR PU": "READY PU"})
-    mad_df["CTN"] = mad_df["CTN"].apply(safe_int)
-    mad_df["PALLET TOTAL"] = mad_df["PALLET TOTAL"].apply(safe_int)
+def load_outbound_today():
+    db = get_db()
+    result = db.table("outbound").select("*").eq("date", today_str).execute()
+    return pd.DataFrame(result.data)
 
-    insta = gc.open("Brodiaea Operations").worksheet("Outbound-Instaship 2026")
-    insta_data = insta.get_all_values()
-    insta_headers = [h.strip() for h in insta_data[1]]
-    insta_df = pd.DataFrame(insta_data[2:], columns=insta_headers)
-    insta_df.columns = [c.strip() for c in insta_df.columns]
-    insta_df["_source"] = "Instaship"
-    insta_df["CTN"] = insta_df["CTN"].apply(safe_int)
-    insta_df["PALLET TOTAL"] = insta_df["PALLET TOTAL"].apply(safe_int)
-
-    shared = ["ACCOUNT", "CARRIER", "DATE", "CONSIGNEE",
-              "SALES ORDER", "PO", "CTN", "PALLET TOTAL", "LOAD #", "_source"]
-    combined = pd.concat(
-        [mad_df[[c for c in shared if c in mad_df.columns]],
-         insta_df[[c for c in shared if c in insta_df.columns]]],
-        ignore_index=True
-    )
-    combined = combined[combined["ACCOUNT"].str.strip() != ""]
-    return combined
+@st.cache_data(ttl=120)
+def load_outbound_tomorrow():
+    db = get_db()
+    result = db.table("outbound").select("*").eq("date", tomorrow_str).execute()
+    return pd.DataFrame(result.data)
 
 # --- load data ---
-df = load_inbound()
+active = load_active_containers()
 dock_df = load_dock()
-out_df = load_outbound()
-import zoneinfo
-pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
-today = datetime.now(pacific).date()
-tomorrow = today + timedelta(days=1)
+out_today = load_outbound_today()
+out_tomorrow = load_outbound_tomorrow()
 
-df["Arrival date"] = df["Arrival date"].apply(parse_date)
-df["Empty TImeStamp"] = df["Empty TImeStamp"].apply(parse_date)
+# --- inbound calculations ---
+if not active.empty:
+    active["arrival_date_only"] = active["arrival_date"].dt.date
+    active["days_since_arrival"] = (pd.Timestamp(today) - active["arrival_date"]).dt.days
+    active["days_since_empty"] = active.apply(
+        lambda r: (pd.Timestamp(today) - r["empty_timestamp"]).days
+        if pd.notna(r["empty_timestamp"]) else None, axis=1
+    )
+    unload_breached = active[(active["empty"] != True) & (active["days_since_arrival"] >= 3)]
+    unload_at_risk = active[(active["empty"] != True) & (active["days_since_arrival"] == 2)]
+    receive_breached = active[(active["empty"] == True) & (active["received"] != True) & (active["days_since_empty"] >= 2)]
+    receive_at_risk = active[(active["empty"] == True) & (active["received"] != True) & (active["days_since_empty"] == 1)]
+    dwell_24_48 = active[(active["empty"] != True) & (active["days_since_arrival"] >= 1) & (active["days_since_arrival"] < 2)]
+    dwell_48_72 = active[(active["empty"] != True) & (active["days_since_arrival"] >= 2) & (active["days_since_arrival"] < 3)]
+    dwell_72_plus = active[(active["empty"] != True) & (active["days_since_arrival"] >= 3)]
+    arriving_today = active[active["arrival_date_only"] == today]
+    arriving_tomorrow = active[active["arrival_date_only"] == tomorrow]
+else:
+    unload_breached = unload_at_risk = receive_breached = receive_at_risk = pd.DataFrame()
+    dwell_24_48 = dwell_48_72 = dwell_72_plus = pd.DataFrame()
+    arriving_today = arriving_tomorrow = pd.DataFrame()
 
-active = df[
-    (df["PICKED UP"] != "TRUE") &
-    (df["CONTAINER"].str.strip() != "") &
-    (df["Arrival date"].notna())
-].copy()
+# --- outbound calculations ---
+mad_today = out_today[out_today["business"] == "MAD"] if not out_today.empty else pd.DataFrame()
+insta_today = out_today[out_today["business"] == "Instaship"] if not out_today.empty else pd.DataFrame()
 
-active["arrival_date_only"] = active["Arrival date"].dt.date
-active["days_since_arrival"] = (pd.Timestamp(today) - active["Arrival date"]).dt.days
-active["days_since_empty"] = active.apply(
-    lambda r: (pd.Timestamp(today) - r["Empty TImeStamp"]).days
-    if pd.notna(r["Empty TImeStamp"]) else None, axis=1
-)
-
-unload_breached = active[(active["EMPTY"] != "TRUE") & (active["days_since_arrival"] >= 3)]
-unload_at_risk = active[(active["EMPTY"] != "TRUE") & (active["days_since_arrival"] == 2)]
-receive_breached = active[(active["EMPTY"] == "TRUE") & (active["RECEIVED"] != "TRUE") & (active["days_since_empty"] >= 2)]
-receive_at_risk = active[(active["EMPTY"] == "TRUE") & (active["RECEIVED"] != "TRUE") & (active["days_since_empty"] == 1)]
-dwell_24_48 = active[(active["EMPTY"] != "TRUE") & (active["days_since_arrival"] >= 1) & (active["days_since_arrival"] < 2)]
-dwell_48_72 = active[(active["EMPTY"] != "TRUE") & (active["days_since_arrival"] >= 2) & (active["days_since_arrival"] < 3)]
-dwell_72_plus = active[(active["EMPTY"] != "TRUE") & (active["days_since_arrival"] >= 3)]
-arriving_today = active[active["arrival_date_only"] == today]
-arriving_tomorrow = active[active["arrival_date_only"] == tomorrow]
-
-out_df["DATE"] = out_df["DATE"].apply(parse_date)
-out_df = out_df[out_df["DATE"].notna()]
-out_today = out_df[out_df["DATE"].dt.date == today]
-out_tomorrow = out_df[out_df["DATE"].dt.date == tomorrow]
-mad_today = out_today[out_today["_source"] == "MAD"]
-insta_today = out_today[out_today["_source"] == "Instaship"]
-
+# --- dock calculations ---
 def door_type(row):
-    status = str(row.get("Status", "")).strip().lower()
-    container = str(row.get("Container #/Trailer", "")).strip()
+    status = str(row.get("status", "")).strip().lower()
+    container = str(row.get("container_trailer", "")).strip()
     reserved = ["ramp", "trash", "cardboard", "pallets", "fedex fround", "ups"]
     if any(r in container.lower() for r in reserved):
         return "reserved"
@@ -159,14 +114,18 @@ def door_type(row):
         return "vacant"
     return "occupied"
 
-dock_df["_type"] = dock_df.apply(door_type, axis=1)
-total_doors = len(dock_df)
-occupied_doors = dock_df[dock_df["_type"] == "occupied"].shape[0]
-vacant_doors = dock_df[dock_df["_type"] == "vacant"].shape[0]
-utilization = round((occupied_doors / total_doors) * 100) if total_doors > 0 else 0
+if not dock_df.empty:
+    dock_df["_type"] = dock_df.apply(door_type, axis=1)
+    total_doors = len(dock_df)
+    occupied_doors = dock_df[dock_df["_type"] == "occupied"].shape[0]
+    vacant_doors = dock_df[dock_df["_type"] == "vacant"].shape[0]
+    utilization = round((occupied_doors / total_doors) * 100) if total_doors > 0 else 0
+else:
+    total_doors = occupied_doors = vacant_doors = utilization = 0
 
 # --- header ---
 page_header("Brodiaea Operations", f"Morning briefing — {today.strftime('%A, %B %d %Y')}")
+
 with st.sidebar:
     st.caption(f"👤 {st.session_state['user'].email}")
     if st.button("Sign out", use_container_width=True):
@@ -176,10 +135,9 @@ if st.button("Refresh"):
     st.cache_data.clear()
     st.rerun()
 
-# --- 2x2 metric cards side by side ---
-inbound_col, outbound_col = st.columns(2)
-
+# --- 2x2 metric cards ---
 card_style = "background:#ffffff;border-radius:10px;padding:1rem 1.25rem;border:1.5px solid #d1d5db;box-shadow:0 2px 6px rgba(0,0,0,0.08);min-height:90px;"
+inbound_col, outbound_col = st.columns(2)
 
 with inbound_col:
     st.markdown('<div class="group-header"><p>Inbound</p></div>', unsafe_allow_html=True)
@@ -201,21 +159,20 @@ with outbound_col:
     r1c3, r1c4 = st.columns(2)
     r2c3, r2c4 = st.columns(2)
     with r1c3:
-        st.markdown(f'<div style="{card_style}"><p class="metric-label">MAD shipments today</p><p class="metric-value">{len(mad_today)}</p><p class="metric-sub">{mad_today["CTN"].sum():,} cartons</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="{card_style}"><p class="metric-label">MAD shipments today</p><p class="metric-value">{len(mad_today)}</p><p class="metric-sub">{mad_today["ctn"].sum():,} cartons</p></div>', unsafe_allow_html=True)
     with r1c4:
-        st.markdown(f'<div style="{card_style}"><p class="metric-label">Instaship shipments today</p><p class="metric-value">{len(insta_today)}</p><p class="metric-sub">{insta_today["CTN"].sum():,} cartons</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="{card_style}"><p class="metric-label">Instaship shipments today</p><p class="metric-value">{len(insta_today)}</p><p class="metric-sub">{insta_today["ctn"].sum():,} cartons</p></div>', unsafe_allow_html=True)
     with r2c3:
         st.markdown(f'<div style="{card_style}"><p class="metric-label">Outbound tomorrow</p><p class="metric-value">{len(out_tomorrow)}</p></div>', unsafe_allow_html=True)
     with r2c4:
-        st.markdown(f'<div style="{card_style}"><p class="metric-label">Total pallets out today</p><p class="metric-value">{out_today["PALLET TOTAL"].sum()}</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="{card_style}"><p class="metric-label">Total pallets out today</p><p class="metric-value">{out_today["pallet_total"].sum() if not out_today.empty else 0}</p></div>', unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# --- main content: strict 50/50 split ---
+# --- main content ---
 left, right = st.columns(2)
 
 with left:
-    # SLA alerts
     st.markdown('<p class="section-header">SLA alerts</p>', unsafe_allow_html=True)
     total_alerts = len(unload_breached) + len(unload_at_risk) + len(receive_breached) + len(receive_at_risk)
     if total_alerts == 0:
@@ -226,26 +183,25 @@ with left:
     else:
         for _, row in unload_breached.iterrows():
             st.markdown(f"""<div class="alert-red">
-                <p class="alert-title">Unload SLA breached — {row['CONTAINER']}</p>
-                <p class="alert-sub">{row['ACCOUNT']} · Arrived {row['days_since_arrival']} days ago · Door {row.get('DOCK DOOR','—')}</p>
+                <p class="alert-title">Unload SLA breached — {row['container']}</p>
+                <p class="alert-sub">{row['account']} · Arrived {row['days_since_arrival']} days ago · Door {row.get('dock_door') or '—'}</p>
             </div>""", unsafe_allow_html=True)
         for _, row in unload_at_risk.iterrows():
             st.markdown(f"""<div class="alert-amber">
-                <p class="alert-title">Unload SLA at risk — {row['CONTAINER']}</p>
-                <p class="alert-sub">{row['ACCOUNT']} · Arrived {row['days_since_arrival']} days ago · Must unload tomorrow</p>
+                <p class="alert-title">Unload SLA at risk — {row['container']}</p>
+                <p class="alert-sub">{row['account']} · Arrived {row['days_since_arrival']} days ago · Must unload tomorrow</p>
             </div>""", unsafe_allow_html=True)
         for _, row in receive_breached.iterrows():
             st.markdown(f"""<div class="alert-red">
-                <p class="alert-title">Receive report overdue — {row['CONTAINER']}</p>
-                <p class="alert-sub">{row['ACCOUNT']} · Empty {row['days_since_empty']} days ago · Report not sent</p>
+                <p class="alert-title">Receive report overdue — {row['container']}</p>
+                <p class="alert-sub">{row['account']} · Empty {row['days_since_empty']} days ago · Report not sent</p>
             </div>""", unsafe_allow_html=True)
         for _, row in receive_at_risk.iterrows():
             st.markdown(f"""<div class="alert-amber">
-                <p class="alert-title">Receive report due tomorrow — {row['CONTAINER']}</p>
-                <p class="alert-sub">{row['ACCOUNT']} · Empty yesterday · Send report today</p>
+                <p class="alert-title">Receive report due tomorrow — {row['container']}</p>
+                <p class="alert-sub">{row['account']} · Empty yesterday · Send report today</p>
             </div>""", unsafe_allow_html=True)
 
-    # container dwell
     st.markdown('<p class="section-header">Container dwell</p>', unsafe_allow_html=True)
     d1, d2, d3 = st.columns(3)
     with d1:
@@ -255,49 +211,46 @@ with left:
     with d3:
         st.markdown(f'<div class="dwell-card dwell-red"><p class="dwell-num">{len(dwell_72_plus)}</p><p class="dwell-label">3+ days</p></div>', unsafe_allow_html=True)
 
-    # arriving today compact table
     st.markdown('<p class="section-header">Arriving today</p>', unsafe_allow_html=True)
     compact_table(
-        [[row['CONTAINER'], row['ACCOUNT'], row.get('TRUCKING COMPANY','—'),
-          row.get('SKU Count','—'), row.get('Carton Count','—')]
+        [[row['container'], row['account'], row.get('trucking_company') or '—',
+          row.get('sku_count') or '—', row.get('carton_count') or '—']
          for _, row in arriving_today.iterrows()],
         ["Container", "Account", "Carrier", "SKUs", "Cartons"],
         "No containers arriving today"
     )
 
-    # arriving tomorrow compact table
     st.markdown('<p class="section-header">Arriving tomorrow</p>', unsafe_allow_html=True)
     compact_table(
-        [[row['CONTAINER'], row['ACCOUNT'], row.get('TRUCKING COMPANY','—'),
-          row.get('SKU Count','—'), row.get('Carton Count','—')]
+        [[row['container'], row['account'], row.get('trucking_company') or '—',
+          row.get('sku_count') or '—', row.get('carton_count') or '—']
          for _, row in arriving_tomorrow.iterrows()],
         ["Container", "Account", "Carrier", "SKUs", "Cartons"],
         "No containers arriving tomorrow"
     )
 
 with right:
-    # shipments going out today compact table
     st.markdown('<p class="section-header">Shipments going out today</p>', unsafe_allow_html=True)
     compact_table(
-        [[row.get('SALES ORDER','—'), row['_source'], row.get('CARRIER','—'),
-          row.get('CONSIGNEE','—'), f"{row['CTN']:,}", str(row['PALLET TOTAL']),
-          str(row.get('LOAD #','—'))]
+        [[row.get('sales_order') or '—', row.get('business') or '—',
+          row.get('carrier') or '—', row.get('consignee') or '—',
+          f"{row.get('ctn', 0):,}", str(row.get('pallet_total', 0)),
+          str(row.get('load_number') or '—')]
          for _, row in out_today.iterrows()],
         ["Sales order", "Biz", "Carrier", "Consignee", "Cartons", "Pallets", "Load #"],
         "No shipments scheduled today"
     )
 
-    # outbound tomorrow compact table
     st.markdown('<p class="section-header">Outbound tomorrow</p>', unsafe_allow_html=True)
     compact_table(
-        [[row.get('SALES ORDER','—'), row['_source'], row.get('CARRIER','—'),
-          row.get('CONSIGNEE','—'), f"{row['CTN']:,}", str(row['PALLET TOTAL'])]
+        [[row.get('sales_order') or '—', row.get('business') or '—',
+          row.get('carrier') or '—', row.get('consignee') or '—',
+          f"{row.get('ctn', 0):,}", str(row.get('pallet_total', 0))]
          for _, row in out_tomorrow.iterrows()],
         ["Sales order", "Biz", "Carrier", "Consignee", "Cartons", "Pallets"],
         "No shipments scheduled tomorrow"
     )
 
-    # dock snapshot
     st.markdown('<p class="section-header">Dock snapshot</p>', unsafe_allow_html=True)
     st.markdown(f"""<div class="metric-card">
         <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
@@ -318,4 +271,4 @@ with right:
         <p style="font-size:11px;color:#6b7280;margin:6px 0 0;text-align:right;">{utilization}% utilized</p>
     </div>""", unsafe_allow_html=True)
 
-st.caption(f"Last updated: {datetime.now().strftime('%I:%M %p')} · Refreshes every 5 minutes")
+st.caption(f"Last updated: {datetime.now(pacific).strftime('%I:%M %p')} · Refreshes every 5 minutes")
