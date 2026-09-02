@@ -5,6 +5,8 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from styles import GLOBAL_CSS, page_header
 from google.oauth2.service_account import Credentials
+from auth import require_auth
+require_auth()
 
 st.set_page_config(layout="wide")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
