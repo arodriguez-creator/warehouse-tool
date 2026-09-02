@@ -6,6 +6,16 @@ def get_supabase():
     key = st.secrets["supabase"]["key"]
     return create_client(url, key)
 
+@st.cache_resource
+def get_db():
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    email = st.secrets["supabase_service_user"]["email"]
+    password = st.secrets["supabase_service_user"]["password"]
+    client = create_client(url, key)
+    client.auth.sign_in_with_password({"email": email, "password": password})
+    return client
+
 def login():
     st.markdown("""
     <div style="max-width:400px;margin:4rem auto;padding:2rem;
@@ -52,17 +62,6 @@ def require_auth():
     if "user" not in st.session_state:
         login()
         st.stop()
-
-def get_supabase_client():
-    url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"]["key"]
-    client = create_client(url, key)
-    if "access_token" in st.session_state:
-        client.auth.set_session(
-            st.session_state["access_token"],
-            st.session_state.get("refresh_token", "")
-        )
-    return client
 
 def show_user():
     with st.sidebar:
