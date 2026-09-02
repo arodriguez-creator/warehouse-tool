@@ -76,6 +76,14 @@ active = load_active_containers()
 dock_df = load_dock()
 out_today = load_outbound_today()
 out_tomorrow = load_outbound_tomorrow()
+# load empty containers
+empty_result = get_db().table("containers")\
+    .select("container, account, trucking_company, dock_door")\
+    .eq("empty", True)\
+    .eq("picked_up", False)\
+    .execute()
+empty_df = pd.DataFrame(empty_result.data)
+empty_count = len(empty_df) if not empty_df.empty else 0
 
 # --- inbound calculations ---
 if not active.empty:
