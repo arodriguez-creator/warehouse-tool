@@ -144,6 +144,8 @@ inbound_col, outbound_col = st.columns(2)
 
 with inbound_col:
     st.markdown('<div class="group-header"><p>Inbound</p></div>', unsafe_allow_html=True)
+    empty_count = len(empty_df) if not empty_df.empty else 0
+    st.markdown(f'<div class="group-header"><p>Inbound · <span style="font-size:12px;color:#f59e0b;">{empty_count} empties in yard</span></p></div>', unsafe_allow_html=True)
     r1c1, r1c2 = st.columns(2)
     r2c1, r2c2 = st.columns(2)
     with r1c1:
@@ -253,6 +255,29 @@ with right:
         ["Sales order", "Biz", "Carrier", "Consignee", "Cartons", "Pallets"],
         "No shipments scheduled tomorrow"
     )
+
+    # empty containers in yard
+    st.markdown('<p class="section-header">Empty containers in yard</p>', unsafe_allow_html=True)
+    db = get_db()
+    empty_result = db.table("containers")\
+        .select("container, account, trucking_company, dock_door")\
+        .eq("empty", True)\
+        .eq("picked_up", False)\
+        .execute()
+    empty_df = pd.DataFrame(empty_result.data)
+
+    if empty_df.empty:
+        st.markdown("""<div class="alert-green">
+            <p class="alert-title">No empty containers in yard</p>
+        </div>""", unsafe_allow_html=True)
+    else:
+        compact_table(
+            [[row.get("container","—"), row.get("account","—"),
+              row.get("trucking_company","—"), row.get("dock_door","—")]
+             for _, row in empty_df.iterrows()],
+            ["Container", "Account", "Carrier", "Door"],
+            "No empty containers"
+        )
 
     st.markdown('<p class="section-header">Dock snapshot</p>', unsafe_allow_html=True)
     st.markdown(f"""<div class="metric-card">

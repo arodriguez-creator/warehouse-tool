@@ -192,6 +192,32 @@ if st.button("Refresh data"):
 
 st.subheader("Active container log")
 st.caption("Click any column header to sort")
+with st.expander("🟡 Empty containers in yard", expanded=True):
+    db = get_db()
+    empty_result = db.table("containers")\
+        .select("container, account, trucking_company, dock_door, empty_timestamp")\
+        .eq("empty", True)\
+        .eq("picked_up", False)\
+        .order("empty_timestamp")\
+        .execute()
+    empty_df = pd.DataFrame(empty_result.data)
+
+    if empty_df.empty:
+        st.success("No empty containers in yard")
+    else:
+        st.caption(f"{len(empty_df)} empty containers waiting for pickup")
+        rename_map = {
+            "container": "Container",
+            "account": "Account",
+            "trucking_company": "Trucking company",
+            "dock_door": "Dock door",
+            "empty_timestamp": "Empty date"
+        }
+        st.dataframe(
+            empty_df.rename(columns=rename_map),
+            use_container_width=True,
+            hide_index=True
+        )
 
 with st.expander("Add new inbound container"):
     with st.form("new_container"):
