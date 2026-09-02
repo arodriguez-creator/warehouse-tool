@@ -1,41 +1,19 @@
-import gspread
 import pandas as pd
 import streamlit as st
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from styles import GLOBAL_CSS, page_header
-from google.oauth2.service_account import Credentials
-from auth import require_auth, show_user
+from auth import require_auth, show_user, get_db
+
 require_auth()
 show_user()
 
 st.set_page_config(layout="wide")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
-page_header("Dock door board", "Live from Brodiaea Operations — Dock_Status tab")
-
-def get_creds():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-    return Credentials.from_service_account_info(creds_dict, scopes=scope)
-
-@st.cache_data(ttl=60)
-def load_data():
-    gc = gspread.authorize(get_creds())
-    sheet = gc.open("Brodiaea Operations").worksheet("Dock_Status")
-    df = pd.DataFrame(sheet.get_all_values())
-    df.columns = df.iloc[0]
-    df = df[1:].reset_index(drop=True)
-    df = df.loc[:, df.columns != '']
-    df["_row_num"] = range(2, len(df) + 2)
-    return df
-
-def get_sheet():
-    gc = gspread.authorize(get_creds())
-    return gc.open("Brodiaea Operations").worksheet("Dock_Status")
+page_header("Dock door board", "Live from Supabase — Dock Status")
 
 def clean(val):
-    return "" if not val or str(val).strip() == "nan" else str(val).strip()
+    return "" if not val or str(val) == "nan" or val is None else str(val).strip()
 
 def get_door_type(status, unloading, container):
     status = str(status).strip().lower()
@@ -60,26 +38,32 @@ color_map = {
     "full":      {"bg": "#FAEEDA", "border": "#854F0B", "text": "#633806", "label": "Full"},
 }
 
-df = load_data()
-headers = get_sheet().row_values(1)
+@st.cache_data(ttl=60)
+def load_data():
+    db = get_db()
+    result = db.table("dock_status").select("*").order("door").execute()
+    return pd.DataFrame(result.data)
 
+df = load_data()
+
+# --- sidebar ---
 with st.sidebar:
     st.subheader("Update a door")
-    door_options = df["Door"].tolist() if "Door" in df.columns else [f"Door {i}" for i in range(1, 36)]
-    selected_door = st.selectbox("Select door", door_options, key="door_select")
-   
 
-    door_row = df[df["Door"] == selected_door].iloc[0] if "Door" in df.columns and not df[df["Door"] == selected_door].empty else None
+    door_options = df["door"].tolist() if not df.empty else [f"Door {i}" for i in range(1, 36)]
+    selected_door = st.selectbox("Select door", door_options, key="door_select")
+
+    door_row = df[df["door"] == selected_door].iloc[0] if not df.empty and selected_door in df["door"].values else None
 
     if door_row is not None:
-        row_num = int(door_row["_row_num"])
+        door_id = door_row["id"]
         k = selected_door.replace(" ", "_")
 
-        current_container = clean(door_row.get("Container #/Trailer", ""))
-        current_status = clean(door_row.get("Status", ""))
-        current_unloading = clean(door_row.get("Unloading/Empty", ""))
-        current_customer = clean(door_row.get("CUSTOMER", ""))
-        current_carrier = clean(door_row.get("Carrier", ""))
+        current_container = clean(door_row.get("container_trailer", ""))
+        current_status = clean(door_row.get("status", "Vacant"))
+        current_unloading = clean(door_row.get("unloading_empty", ""))
+        current_customer = clean(door_row.get("customer", ""))
+        current_carrier = clean(door_row.get("carrier", ""))
 
         unloading_options = ["", "Unloading", "Full", "Loading"]
         unloading_index = unloading_options.index(current_unloading) if current_unloading in unloading_options else 0
@@ -94,46 +78,44 @@ with st.sidebar:
         new_carrier = st.text_input("Carrier", value=current_carrier, key=f"carrier_{k}")
 
         if st.button("Save changes", type="primary", use_container_width=True, key=f"save_{k}"):
-            sheet = get_sheet()
-            updates = {}
-            if "Container #/Trailer" in headers:
-                updates[chr(ord('A') + headers.index("Container #/Trailer"))] = new_container
-            if "Status" in headers:
-                updates[chr(ord('A') + headers.index("Status"))] = new_status
-            if "Unloading/Empty" in headers:
-                updates[chr(ord('A') + headers.index("Unloading/Empty"))] = new_unloading
-            if "CUSTOMER" in headers:
-                updates[chr(ord('A') + headers.index("CUSTOMER"))] = new_customer
-            if "Carrier" in headers:
-                updates[chr(ord('A') + headers.index("Carrier"))] = new_carrier
-            for col_letter, value in updates.items():
-                sheet.update(f"{col_letter}{row_num}", [[value]])
+            db = get_db()
+            db.table("dock_status").update({
+                "container_trailer": new_container,
+                "status": new_status,
+                "unloading_empty": new_unloading,
+                "customer": new_customer,
+                "carrier": new_carrier,
+            }).eq("id", door_id).execute()
             st.success(f"{selected_door} updated")
             st.cache_data.clear()
             st.rerun()
 
         if st.button("Clear door", use_container_width=True, key=f"clear_{k}"):
-            sheet = get_sheet()
-            for col_name in ["Container #/Trailer", "Unloading/Empty", "CUSTOMER", "Carrier"]:
-                if col_name in headers:
-                    col = chr(ord('A') + headers.index(col_name))
-                    sheet.update(f"{col}{row_num}", [[""]])
-            if "Status" in headers:
-                status_col = chr(ord('A') + headers.index("Status"))
-                sheet.update(f"{status_col}{row_num}", [["Vacant"]])
+            db = get_db()
+            db.table("dock_status").update({
+                "container_trailer": "",
+                "status": "Vacant",
+                "unloading_empty": "",
+                "customer": "",
+                "carrier": "",
+            }).eq("id", door_id).execute()
             st.success(f"{selected_door} cleared")
             st.cache_data.clear()
             st.rerun()
 
 # --- metrics ---
-total = len(df)
-def door_type_series(row):
-    return get_door_type(row.get("Status", ""), row.get("Unloading/Empty", ""), row.get("Container #/Trailer", ""))
-
-types = df.apply(door_type_series, axis=1)
-occupied_count = types.isin(["occupied", "full", "unloading"]).sum()
-vacant_count = types.eq("vacant").sum()
-utilization = round((occupied_count / total) * 100) if total > 0 else 0
+if not df.empty:
+    types = df.apply(lambda row: get_door_type(
+        row.get("status", ""),
+        row.get("unloading_empty", ""),
+        row.get("container_trailer", "")
+    ), axis=1)
+    total = len(df)
+    occupied_count = types.isin(["occupied", "full", "unloading"]).sum()
+    vacant_count = types.eq("vacant").sum()
+    utilization = round((occupied_count / total) * 100) if total > 0 else 0
+else:
+    total = occupied_count = vacant_count = utilization = 0
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total doors", total)
@@ -155,26 +137,28 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-cols = st.columns(7)
-for i, row in df.iterrows():
-    door_label = str(row.get("Door", f"Door {i+1}")).strip()
-    container = str(row.get("Container #/Trailer", "")).strip()
-    status_raw = str(row.get("Status", "")).strip()
-    unloading = str(row.get("Unloading/Empty", "")).strip()
-    door_type = get_door_type(status_raw, unloading, container)
-    c = color_map[door_type]
-    col = cols[i % 7]
-    display_name = container if container and container != "nan" else ""
-    display_sub = unloading if unloading and unloading != "nan" and door_type != "reserved" else c["label"]
-    with col:
-        st.markdown(f"""
-        <div style="background:{c['bg']};border:0.5px solid {c['border']};border-radius:8px;
-                    padding:10px 8px;min-height:80px;margin-bottom:8px;
-                    display:flex;flex-direction:column;justify-content:space-between;">
-          <span style="font-size:10px;font-weight:500;color:{c['text']}">{door_label}</span>
-          <span style="font-size:10px;font-weight:500;color:{c['text']};word-break:break-all;margin-top:4px">{display_name}</span>
-          <span style="font-size:9px;color:{c['text']};margin-top:2px">{display_sub}</span>
-        </div>
-        """, unsafe_allow_html=True)
+# --- door tiles ---
+if not df.empty:
+    cols = st.columns(7)
+    for i, row in df.iterrows():
+        door_label = clean(row.get("door", f"Door {i+1}"))
+        container = clean(row.get("container_trailer", ""))
+        status_raw = clean(row.get("status", ""))
+        unloading = clean(row.get("unloading_empty", ""))
+        door_type = get_door_type(status_raw, unloading, container)
+        c = color_map[door_type]
+        col = cols[i % 7]
+        display_name = container if container else ""
+        display_sub = unloading if unloading and door_type != "reserved" else c["label"]
+        with col:
+            st.markdown(f"""
+            <div style="background:{c['bg']};border:0.5px solid {c['border']};border-radius:8px;
+                        padding:10px 8px;min-height:80px;margin-bottom:8px;
+                        display:flex;flex-direction:column;justify-content:space-between;">
+              <span style="font-size:10px;font-weight:500;color:{c['text']}">{door_label}</span>
+              <span style="font-size:10px;font-weight:500;color:{c['text']};word-break:break-all;margin-top:4px">{display_name}</span>
+              <span style="font-size:9px;color:{c['text']};margin-top:2px">{display_sub}</span>
+            </div>
+            """, unsafe_allow_html=True)
 
-st.caption("Select a door in the left panel to update its status. Changes save directly to Google Sheets.")
+st.caption("Select a door in the left panel to update its status. Changes save directly to Supabase.")
