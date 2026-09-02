@@ -56,6 +56,7 @@ def load_view(date_filter, carrier_filter):
     df = pd.DataFrame(result.data)
     if not df.empty:
         df["pickup_date"] = pd.to_datetime(df["pickup_date"], errors="coerce").dt.tz_localize(None)
+        
     return df
 
 pending_df = load_pending()
@@ -220,6 +221,8 @@ fc1, fc2 = st.columns(2)
 carrier_filter = fc1.selectbox("Carrier", ["All", "AMZX", "EXLA", "CTII", "TFIN", "AACT", "XJLW"])
 
 view_df = load_view(date_filter, carrier_filter if carrier_filter != "All" else None)
+st.write(view_df["pickup_date"].head())
+
 
 if not view_df.empty:
     view_df["pickup_date"] = view_df["pickup_date"].apply(lambda x: pd.to_datetime(x).strftime("%m/%d/%Y") if pd.notna(x) else "")
