@@ -21,7 +21,7 @@ tomorrow = today + timedelta(days=1)
 def clean(val):
     return "" if not val or str(val) == "nan" or val is None else str(val).strip()
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=1)
 def load_pending():
     db = get_db()
     result = db.table("amazon_pickups")\
