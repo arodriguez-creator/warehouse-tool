@@ -5,6 +5,8 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from styles import GLOBAL_CSS, page_header
 from auth import require_auth, show_user, get_db
+from datetime import timezone
+import zoneinfo
 
 require_auth()
 show_user()
@@ -16,9 +18,10 @@ page_header("Outbound shipments", "Live from Supabase — MAD & Instaship")
 def clean(val):
     return "" if not val or str(val) == "nan" or val is None else str(val).strip()
 
-today = datetime.today().date()
+pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
+today = datetime.now(pacific).date()
 tomorrow = today + timedelta(days=1)
-st.write(f"Debug - today: {today}, tomorrow: {tomorrow}")
+
 
 @st.cache_data(ttl=120)
 def load_today():
