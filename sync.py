@@ -58,7 +58,7 @@ new_rows = []
 for row in rows:
     r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
     container = clean(r.get("CONTAINER", ""))
-    if not container or container in existing_containers:
+    if not container or container.strip() == '' or container in existing_containers:
         continue
     new_rows.append({
         "arrival_date": parse_date(r.get("Arrival date", "")),
@@ -100,6 +100,8 @@ for row in rows:
     account = clean(r.get("ACCOUNT", ""))
     if not so or not account or so in existing_so:
         continue
+    if so in ('--', '---', "Multiple SO's") or so.strip() == '':
+        continue
     new_rows.append({
         "business": "MAD",
         "account": account,
@@ -139,6 +141,8 @@ for row in rows:
     so = clean(r.get("SALES ORDER", ""))
     account = clean(r.get("ACCOUNT", ""))
     if not so or not account or so in existing_so:
+        continue
+    if so in ('--', '---', "Multiple SO's") or so.strip() == '':
         continue
     new_rows.append({
         "business": "Instaship",
