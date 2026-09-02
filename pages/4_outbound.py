@@ -103,6 +103,7 @@ with st.sidebar:
 
                         bulk_carrier = st.text_input("Set carrier (all)", key="bulk_carrier")
                         bulk_load = st.text_input("Set load # (all)", key="bulk_load")
+                        bulk_appt = st.text_input("Set appt time (all)", key="bulk_appt")
                         bulk_pallets_str = st.text_input("Set pallets (all)", key="bulk_pallets")
                         st.divider()
                         mark_pu = st.checkbox("Mark all as picked up", key="bulk_pu")
@@ -116,6 +117,8 @@ with st.sidebar:
                                     updates["carrier"] = bulk_carrier.strip()
                                 if bulk_load.strip():
                                     updates["load_number"] = bulk_load.strip()
+                                if bulk_appt.strip():
+                                    updates["appt_time"] = bulk_appt.strip()
                                 if bulk_pallets_str.strip().isdigit():
                                     updates["pallet_total"] = int(bulk_pallets_str.strip())
                                 if mark_pu:
@@ -186,6 +189,7 @@ with st.sidebar:
         st.caption("Select orders that share a carrier pickup")
         load_source = st.selectbox("Business", ["MAD", "Instaship"])
         new_load_id = st.text_input("Load ID (from carrier)")
+        new_appt_time = st.text_input("Appt time (optional)")
         cutoff_str = (today - timedelta(days=7)).strftime("%Y-%m-%d")
         load_df = load_for_edit(load_source, cutoff_str)
         so_list = [s for s in load_df["sales_order"].dropna().tolist() if str(s).strip() != ""] if not load_df.empty else []
@@ -201,7 +205,10 @@ with st.sidebar:
                 for so in selected_orders_load:
                     match = load_df[load_df["sales_order"] == so]
                     if not match.empty:
-                        db.table("outbound").update({"load_number": new_load_id}).eq("id", match.iloc[0]["id"]).execute()
+                        updates = {"load_number": new_load_id}
+                        if new_appt_time.strip():
+                            updates["appt_time"] = new_appt_time.strip()
+                        db.table("outbound").update(updates).eq("id", match.iloc[0]["id"]).execute()
                 st.cache_data.clear()
                 st.success(f"Load ID {new_load_id} assigned to {len(selected_orders_load)} orders")
                 st.rerun()
