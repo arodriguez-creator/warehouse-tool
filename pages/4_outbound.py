@@ -18,6 +18,7 @@ def clean(val):
 
 today = datetime.today().date()
 tomorrow = today + timedelta(days=1)
+st.write(f"Debug - today: {today}, tomorrow: {tomorrow}")
 
 @st.cache_data(ttl=120)
 def load_today():
