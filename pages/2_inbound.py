@@ -5,9 +5,9 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from styles import GLOBAL_CSS, page_header
 from auth import require_auth, show_user, get_db
-
 require_auth()
 show_user()
+import zoneinfo
 
 st.set_page_config(layout="wide")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -34,7 +34,9 @@ def load_dock_data():
 
 def get_active_df():
     db = get_db()
-    cutoff = (datetime.today() - timedelta(days=14)).strftime("%Y-%m-%d")
+    import zoneinfo
+    pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
+    cutoff = (datetime.now(pacific) - timedelta(days=14)).strftime("%Y-%m-%d")
     result = db.table("containers")\
         .select("*")\
         .eq("picked_up", False)\
@@ -72,7 +74,7 @@ with st.sidebar:
                 db = get_db()
                 db.table("containers").update({
                     "empty": True,
-                    "empty_timestamp": datetime.today().strftime("%Y-%m-%d")
+                    "empty_timestamp": datetime.now(pacific).strftime("%Y-%m-%d")
                 }).eq("id", row_id).execute()
                 st.cache_data.clear()
                 st.success(f"{selected_container} marked empty")

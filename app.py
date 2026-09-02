@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(__file__))
 from styles import GLOBAL_CSS, page_header
 from auth import require_auth, logout
 require_auth()
+import zoneinfo
 
 st.set_page_config(page_title="Brodiaea Operations", layout="wide", page_icon="📦")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -110,7 +111,9 @@ def load_outbound():
 df = load_inbound()
 dock_df = load_dock()
 out_df = load_outbound()
-today = datetime.today().date()
+import zoneinfo
+pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
+today = datetime.now(pacific).date()
 tomorrow = today + timedelta(days=1)
 
 df["Arrival date"] = df["Arrival date"].apply(parse_date)
