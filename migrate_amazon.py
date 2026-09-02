@@ -56,7 +56,7 @@ for row in rows:
         "picked": to_bool(r.get("Picked", "")),
         "ready": to_bool(r.get("Ready", "")),
         "bol_printed": to_bool(r.get("Printed BOL & pallet labels", "")),
-        "pickup_date": parse_date(r.get("Pick up date ", "")),
+        "pickup_date": parse_date(r.get("Pick up date", "")),
         "picked_up": to_bool(r.get("Picked up", "")),
         "cartons": to_int(r.get("Cartons", 0)),
         "notes": clean(r.get("Notes (reason for trouble)", "")),
