@@ -33,15 +33,19 @@ def load_dock_data():
     return pd.DataFrame(result.data)
 
 def get_active_df():
-    df = load_data()
+    db = get_db()
+    cutoff = (datetime.today() - timedelta(days=14)).strftime("%Y-%m-%d")
+    result = db.table("containers")\
+        .select("*")\
+        .eq("picked_up", False)\
+        .gte("arrival_date", cutoff)\
+        .order("arrival_date", desc=True)\
+        .execute()
+    df = pd.DataFrame(result.data)
     if df.empty:
         return df
-    df = df[df["picked_up"] != True]
-    df = df[df["arrival_date"].notna()]
+    df["arrival_date"] = pd.to_datetime(df["arrival_date"], errors="coerce")
     df = df[df["container"].str.strip() != ""]
-    cutoff = pd.Timestamp(datetime.today() - timedelta(days=14))
-    df = df[df["arrival_date"] >= cutoff]
-    df = df.sort_values("arrival_date", ascending=False)
     return df
 
 # --- sidebar ---
