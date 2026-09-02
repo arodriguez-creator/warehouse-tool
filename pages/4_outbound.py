@@ -279,7 +279,7 @@ view_df = load_view(
 )
 
 if not view_df.empty:
-    view_df["date"] = pd.to_datetime(view_df["date"]).dt.strftime("%m/%d/%Y")
+    view_df["date"] = pd.to_datetime(view_df["date"]).dt.normalize().dt.strftime("%m/%d/%Y")
 
     s1, s2, s3 = st.columns(3)
     s1.caption(f"{len(view_df)} shipments")
