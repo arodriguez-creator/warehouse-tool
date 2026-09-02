@@ -6,6 +6,8 @@ from google.oauth2.service_account import Credentials
 import sys, os
 sys.path.append(os.path.dirname(__file__))
 from styles import GLOBAL_CSS, page_header
+from auth import require_auth, logout
+require_auth()
 
 st.set_page_config(page_title="Brodiaea Operations", layout="wide", page_icon="📦")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -162,6 +164,10 @@ utilization = round((occupied_doors / total_doors) * 100) if total_doors > 0 els
 
 # --- header ---
 page_header("Brodiaea Operations", f"Morning briefing — {today.strftime('%A, %B %d %Y')}")
+with st.sidebar:
+    st.caption(f"👤 {st.session_state['user'].email}")
+    if st.button("Sign out", use_container_width=True):
+        logout()
 
 if st.button("Refresh"):
     st.cache_data.clear()
