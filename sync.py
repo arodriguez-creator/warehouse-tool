@@ -57,7 +57,8 @@ while True:
         .range(offset, offset + 999)\
         .execute()
     for r in batch.data:
-        existing_keys.add((r["container"], r["arrival_date"]))
+        if r["arrival_date"]:
+            existing_keys.add((r["container"], r["arrival_date"]))
     if len(batch.data) < 1000:
         break
     offset += 1000
@@ -70,6 +71,8 @@ for row in rows:
     if not container or container.strip() == '':
         continue
     arrival = parse_date(r.get("Arrival date", ""))
+    if not arrival:
+        continue
     if (container, arrival) in existing_keys:
         continue
     new_rows.append({

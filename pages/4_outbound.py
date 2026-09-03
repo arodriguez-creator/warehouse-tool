@@ -1,12 +1,11 @@
 import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
+import zoneinfo
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from styles import GLOBAL_CSS, page_header
 from auth import require_auth, show_user, get_db
-from datetime import timezone
-import zoneinfo
 
 require_auth()
 show_user()
@@ -15,13 +14,50 @@ st.set_page_config(layout="wide")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 page_header("Outbound shipments", "Live from Supabase — MAD & Instaship")
 
-def clean(val):
-    return "" if not val or str(val) == "nan" or val is None else str(val).strip()
-
 pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
 today = datetime.now(pacific).date()
 tomorrow = today + timedelta(days=1)
 
+# --- fixed lists ---
+CARRIERS = ["", "FEDEX FREIGHT", "E&E TRANS", "ROAD RUNNER", "FEDEX ECONOMY",
+            "FEDEX PROPRITY", "JB HUNT", "UPS", "CTCC", "WALMART FLEET",
+            "UPS GROUND", "CTCC/FEDEX FREIGHT", "CTCC/SEAVIEW", "CENTRAL TRANSPORT",
+            "FEDEX GROUND", "ESTES", "ONTRAC", "Other"]
+
+FREIGHT_TERMS = ["", "Prepaid CTCC", "Collect", "Prepaid UPS Ground", "PREPAID",
+                 "UPS 2ND DAY AIR", "UPS NEXT DAY AIR", "FEDEX GROUND",
+                 "FEDEX HOME DELIVERY", "FEDEX COLLECT", "3RD PARTY",
+                 "CUSTOMER PROVIDED LABELS", "Other"]
+
+CONSIGNEES = ["", "WALMART", "HINDA", "VA VETERANS", "TRANSFER", "SAMPLE",
+              "STAPLES", "DOME PUBLISHING", "FRED MEYER", "A&A GLOBAL",
+              "POWER SALES", "AMAZON", "BSD SUPERBUY", "TANNER COMPANY",
+              "CERTIF-A-GIFT", "Other"]
+
+ACCOUNTS = ["", "SAKAR", "AGA", "MNS BRANDS", "TECHNICAL PRO", "CASTLEWOOD",
+            "OSMO", "M.HIDARY", "Other"]
+
+ACCOUNT_COLORS = {
+    "SAKAR": "#ffffff",
+    "AGA": "#cce5ff",
+    "MNS BRANDS": "#ffcccc",
+    "TECHNICAL PRO": "#ccffcc",
+    "CASTLEWOOD": "#ffe5cc",
+    "OSMO": "#e5ccff",
+    "M.HIDARY": "#fff0cc",
+}
+
+def clean(val):
+    return "" if not val or str(val) == "nan" or val is None else str(val).strip()
+
+def selectbox_with_other(label, options, current_val, key):
+    if current_val and current_val not in options:
+        options = options + [current_val]
+    idx = options.index(current_val) if current_val in options else 0
+    selected = st.selectbox(label, options, index=idx, key=f"sel_{key}")
+    if selected == "Other":
+        return st.text_input(f"Enter {label.lower()}", key=f"other_{key}")
+    return selected
 
 @st.cache_data(ttl=120)
 def load_today():
@@ -49,7 +85,6 @@ def load_for_edit(business, cutoff_str):
 def load_view(date_filter, business_filter, account_filter, carrier_filter):
     db = get_db()
     query = db.table("outbound").select("*")
-
     if date_filter == "today":
         query = query.eq("date", today.strftime("%Y-%m-%d"))
     elif date_filter == "tomorrow":
@@ -57,14 +92,12 @@ def load_view(date_filter, business_filter, account_filter, carrier_filter):
     elif date_filter == "last7":
         cutoff = (today - timedelta(days=7)).strftime("%Y-%m-%d")
         query = query.gte("date", cutoff)
-
     if business_filter and business_filter != "All":
         query = query.eq("business", business_filter)
-    if account_filter and account_filter != "All":
-        query = query.eq("account", account_filter)
-    if carrier_filter and carrier_filter != "All":
-        query = query.eq("carrier", carrier_filter)
-
+    if account_filter and account_filter.strip():
+        query = query.ilike("account", f"%{account_filter}%")
+    if carrier_filter and carrier_filter.strip():
+        query = query.ilike("carrier", f"%{carrier_filter}%")
     result = query.order("date", desc=True).execute()
     return pd.DataFrame(result.data)
 
@@ -101,7 +134,8 @@ with st.sidebar:
                         st.markdown("**Bulk update fields**")
                         st.caption("Leave blank to skip that field")
 
-                        bulk_carrier = st.text_input("Set carrier (all)", key="bulk_carrier")
+                        bulk_carrier = selectbox_with_other("Carrier (all)", CARRIERS, "", "bulk_carrier")
+                        bulk_freight = selectbox_with_other("Freight terms (all)", FREIGHT_TERMS, "", "bulk_freight")
                         bulk_load = st.text_input("Set load # (all)", key="bulk_load")
                         bulk_appt = st.text_input("Set appt time (all)", key="bulk_appt")
                         bulk_pallets_str = st.text_input("Set pallets (all)", key="bulk_pallets")
@@ -113,8 +147,10 @@ with st.sidebar:
                             updated = 0
                             for _, row in sel_rows.iterrows():
                                 updates = {}
-                                if bulk_carrier.strip():
-                                    updates["carrier"] = bulk_carrier.strip()
+                                if bulk_carrier and bulk_carrier != "Other":
+                                    updates["carrier"] = bulk_carrier
+                                if bulk_freight and bulk_freight != "Other":
+                                    updates["freight_terms"] = bulk_freight
                                 if bulk_load.strip():
                                     updates["load_number"] = bulk_load.strip()
                                 if bulk_appt.strip():
@@ -141,24 +177,42 @@ with st.sidebar:
                         current_load = clean(sel_row.get("load_number", ""))
                         current_freight = clean(sel_row.get("freight_terms", ""))
                         current_appt = clean(sel_row.get("appt_time", ""))
+                        current_notes = clean(sel_row.get("notes", ""))
+                        current_date = sel_row.get("date", "")
+                        current_account = clean(sel_row.get("account", ""))
+                        current_consignee = clean(sel_row.get("consignee", ""))
                         is_picked_up = sel_row.get("pu", False)
 
                         st.markdown("**Edit details**")
-                        new_carrier = st.text_input("Carrier", value=current_carrier, key=f"carrier_{k}")
-                        new_freight = st.text_input("Freight terms", value=current_freight, key=f"freight_{k}")
+
+                        try:
+                            date_val = datetime.strptime(current_date, "%Y-%m-%d").date() if current_date else today
+                        except:
+                            date_val = today
+
+                        new_date = st.date_input("Date", value=date_val, key=f"date_{k}")
+                        new_account = selectbox_with_other("Account", ACCOUNTS, current_account.upper(), f"acct_{k}")
+                        new_carrier = selectbox_with_other("Carrier", CARRIERS, current_carrier.upper(), f"carrier_{k}")
+                        new_freight = selectbox_with_other("Freight terms", FREIGHT_TERMS, current_freight, f"freight_{k}")
+                        new_consignee = selectbox_with_other("Consignee", CONSIGNEES, current_consignee.upper(), f"consignee_{k}")
                         if is_mad:
                             new_appt = st.text_input("Appt time", value=current_appt, key=f"appt_{k}")
                         new_pallets = st.number_input("Pallet total", min_value=0, step=1,
                                                        value=int(current_pallets), key=f"pallets_{k}")
                         new_load = st.text_input("Load #", value=current_load, key=f"load_{k}")
+                        new_notes = st.text_area("Notes", value=current_notes, key=f"notes_{k}")
 
                         if st.button("Save changes", type="primary", use_container_width=True, key=f"save_{k}"):
                             db = get_db()
                             updates = {
+                                "date": new_date.strftime("%Y-%m-%d"),
+                                "account": new_account,
                                 "carrier": new_carrier,
                                 "freight_terms": new_freight,
+                                "consignee": new_consignee,
                                 "pallet_total": new_pallets,
                                 "load_number": new_load,
+                                "notes": new_notes,
                             }
                             if is_mad:
                                 updates["appt_time"] = new_appt
@@ -177,12 +231,10 @@ with st.sidebar:
                                 st.cache_data.clear()
                                 st.success(f"{selected_so} marked picked up")
                                 st.rerun()
-                else:
-                    st.caption("Select one or more sales orders above")
             else:
-                st.info("No unpicked shipments in the last 7 days")
+                st.caption("Select one or more sales orders above")
         else:
-            st.info("No shipments found in the last 7 days")
+            st.info("No unpicked shipments in the last 7 days")
 
     else:
         st.markdown("**Assign load ID to multiple orders**")
@@ -218,22 +270,32 @@ with st.expander("Add new shipment"):
     with st.form("new_shipment"):
         fa, fb = st.columns(2)
         new_business = fa.selectbox("Business", ["MAD", "Instaship"])
-        new_account = fb.text_input("Account")
+        new_account_sel = fb.selectbox("Account", ACCOUNTS)
+        new_account_other = fb.text_input("Other account") if new_account_sel == "Other" else ""
+        new_account = new_account_other if new_account_sel == "Other" else new_account_sel
+
         fc, fd = st.columns(2)
         new_date = fc.date_input("Date")
-        new_carrier = fd.text_input("Carrier")
+        new_carrier_sel = fd.selectbox("Carrier", CARRIERS)
+
         fe, ff = st.columns(2)
-        new_freight = fe.text_input("Freight terms")
-        new_consignee = ff.text_input("Consignee")
+        new_freight_sel = fe.selectbox("Freight terms", FREIGHT_TERMS)
+        new_consignee_sel = ff.selectbox("Consignee", CONSIGNEES)
+
         fg, fh = st.columns(2)
         new_so = fg.text_input("Sales order")
         new_po = fh.text_input("PO")
+
         fi, fj = st.columns(2)
         new_ctn = fi.number_input("Cartons", min_value=0, step=1)
         new_pallets = fj.number_input("Pallets", min_value=0, step=1)
+
         fk, fl = st.columns(2)
         new_load = fk.text_input("Load #")
         new_appt = fl.text_input("Appt time (MAD only)")
+
+        new_notes = st.text_area("Notes")
+
         submitted = st.form_submit_button("Add shipment")
 
         if submitted:
@@ -241,19 +303,23 @@ with st.expander("Add new shipment"):
                 st.error("Sales order is required")
             else:
                 db = get_db()
+                carrier_val = new_carrier_sel if new_carrier_sel != "Other" else ""
+                freight_val = new_freight_sel if new_freight_sel != "Other" else ""
+                consignee_val = new_consignee_sel if new_consignee_sel != "Other" else ""
                 db.table("outbound").insert({
                     "business": new_business,
                     "account": new_account,
-                    "carrier": new_carrier,
+                    "carrier": carrier_val,
                     "date": new_date.strftime("%Y-%m-%d"),
-                    "freight_terms": new_freight,
+                    "freight_terms": freight_val,
                     "appt_time": new_appt if new_business == "MAD" else "",
-                    "consignee": new_consignee,
+                    "consignee": consignee_val,
                     "sales_order": new_so,
                     "po": new_po,
                     "ctn": int(new_ctn),
                     "pallet_total": int(new_pallets),
                     "load_number": new_load,
+                    "notes": new_notes,
                     "pu": False,
                     "billed": False,
                 }).execute()
@@ -273,7 +339,6 @@ col5.metric("Total pallets", df_today["pallet_total"].sum() if not df_today.empt
 st.subheader("Shipment log")
 date_options = ["Today", "Tomorrow", "Last 7 days", "All"]
 selected_range = st.radio("Show", date_options, horizontal=True)
-
 date_filter_map = {"Today": "today", "Tomorrow": "tomorrow", "Last 7 days": "last7", "All": "all"}
 date_filter = date_filter_map[selected_range]
 
@@ -290,16 +355,18 @@ view_df = load_view(
 )
 
 if not view_df.empty:
-    view_df["date"] = view_df["date"].apply(lambda x: pd.to_datetime(x).strftime("%m/%d/%Y") if x else "")
+    view_df["date"] = view_df["date"].apply(
+        lambda x: pd.to_datetime(x).strftime("%m/%d/%Y") if x else "")
 
     s1, s2, s3 = st.columns(3)
     s1.caption(f"{len(view_df)} shipments")
     s2.caption(f"{view_df['ctn'].sum():,} cartons")
     s3.caption(f"{view_df['pallet_total'].sum()} pallets")
 
+    # apply account color coding
     display_cols = ["business", "date", "account", "carrier", "freight_terms",
                     "consignee", "sales_order", "po", "ctn", "pallet_total",
-                    "load_number", "pu", "appt_time"]
+                    "load_number", "appt_time", "pu", "notes"]
     display_cols = [c for c in display_cols if c in view_df.columns]
 
     rename_map = {
@@ -307,10 +374,21 @@ if not view_df.empty:
         "carrier": "Carrier", "freight_terms": "Freight terms",
         "consignee": "Consignee", "sales_order": "Sales order",
         "po": "PO", "ctn": "Cartons", "pallet_total": "Pallets",
-        "load_number": "Load #", "pu": "PU", "appt_time": "Appt time"
+        "load_number": "Load #", "appt_time": "Appt time",
+        "pu": "PU", "notes": "Notes"
     }
-    st.dataframe(view_df[display_cols].rename(columns=rename_map),
-                 use_container_width=True, hide_index=True)
+
+    display_df = view_df[display_cols].rename(columns=rename_map)
+
+    def color_account_row(row):
+        account = str(row.get("Account", "")).upper().strip()
+        color = ACCOUNT_COLORS.get(account, "#ffffff")
+        if color == "#ffffff":
+            return [""] * len(row)
+        return [f"background-color: {color}"] * len(row)
+
+    styled = display_df.style.apply(color_account_row, axis=1)
+    st.dataframe(styled, use_container_width=True, hide_index=True)
 else:
     st.info("No shipments found for the selected filters")
 
