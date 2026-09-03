@@ -387,8 +387,19 @@ if not view_df.empty:
             return [""] * len(row)
         return [f"background-color: {color}"] * len(row)
 
-    styled = display_df.style.apply(color_account_row, axis=1)
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    def get_row_color(account):
+        return ACCOUNT_COLORS.get(str(account).upper().strip(), "")
+
+    st.dataframe(
+        display_df.style.apply(
+            lambda x: [f"background-color: {get_row_color(x['Account'])}" 
+                   if get_row_color(x['Account']) else "" 
+                   for _ in x],
+            axis=1
+        ),
+        use_container_width=True,
+        hide_index=True
+    )
 else:
     st.info("No shipments found for the selected filters")
 
