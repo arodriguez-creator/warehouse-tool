@@ -38,7 +38,7 @@ ACCOUNTS = ["", "SAKAR", "AGA", "MNS BRANDS", "TECHNICAL PRO", "CASTLEWOOD",
             "OSMO", "M.HIDARY", "Other"]
 
 ACCOUNT_COLORS = {
-    "SAKAR": "#ffffff",
+    "SAKAR": "#e8f4fd",
     "AGA": "#cce5ff",
     "MNS BRANDS": "#ffcccc",
     "TECHNICAL PRO": "#ccffcc",
