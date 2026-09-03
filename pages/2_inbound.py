@@ -178,13 +178,13 @@ df = get_active_df()
 total = len(df)
 in_dock = df[df["container_status"] == "In dock"].shape[0] if not df.empty else 0
 not_received = df[df["received"] != True].shape[0] if not df.empty else 0
-not_billed = df[df["billed"] != True].shape[0] if not df.empty else 0
 
-col1, col2, col3, col4 = st.columns(4)
+
+col1, col2, col3, col4 = st.columns(3)
 col1.metric("Active containers", total)
 col2.metric("In dock", in_dock)
 col3.metric("Not yet received", not_received)
-col4.metric("Not yet billed", not_billed)
+
 
 if st.button("Refresh data"):
     st.cache_data.clear()
