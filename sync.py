@@ -13,9 +13,6 @@ SUPABASE_URL = "https://rjwlvflwncltvicodoqj.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqd2x2Zmx3bmNsdHZpY29kb3FqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMDQwNjUsImV4cCI6MjEwMzg4MDA2NX0.8D3ufML8f8nOTnPqlqkmRuZgLsRUHNk0YuU0eQZm3Ic"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# sign in as service user to pass RLS
 supabase.auth.sign_in_with_password({
     "email": "app@brodiaea.internal",
     "password": "InstashiP2026!!!"
@@ -44,6 +41,8 @@ def clean(val):
     v = str(val).strip()
     return "" if v in ["nan", "None", ""] else v
 
+PLACEHOLDER_SO = {'--', '---', "Multiple SO's", "multiple so's", ''}
+
 # --- sync containers ---
 print("Syncing containers...")
 sheet = gc.open("Brodiaea Operations").worksheet("Inbound")
@@ -51,17 +50,30 @@ data = sheet.get_all_values()
 headers = [h.strip() for h in data[0]]
 rows = data[1:]
 
-existing = supabase.table("containers").select("container").execute()
-existing_containers = {r["container"] for r in existing.data}
+existing_keys = set()
+offset = 0
+while True:
+    batch = supabase.table("containers").select("container, arrival_date")\
+        .range(offset, offset + 999)\
+        .execute()
+    for r in batch.data:
+        existing_keys.add((r["container"], r["arrival_date"]))
+    if len(batch.data) < 1000:
+        break
+    offset += 1000
+print(f"  loaded {len(existing_keys)} existing container keys")
 
 new_rows = []
 for row in rows:
     r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
     container = clean(r.get("CONTAINER", ""))
-    if not container or container.strip() == '' or container in existing_containers:
+    if not container or container.strip() == '':
+        continue
+    arrival = parse_date(r.get("Arrival date", ""))
+    if (container, arrival) in existing_keys:
         continue
     new_rows.append({
-        "arrival_date": parse_date(r.get("Arrival date", "")),
+        "arrival_date": arrival,
         "container": container,
         "account": clean(r.get("ACCOUNT", "")),
         "trucking_company": clean(r.get("TRUCKING COMPANY", "")),
@@ -90,17 +102,29 @@ data = sheet.get_all_values()
 headers = [h.strip() for h in data[1]]
 rows = data[2:]
 
-existing = supabase.table("outbound").select("sales_order").eq("business", "MAD").execute()
-existing_so = {r["sales_order"] for r in existing.data}
+existing_keys = set()
+offset = 0
+while True:
+    batch = supabase.table("outbound").select("sales_order, po")\
+        .eq("business", "MAD")\
+        .range(offset, offset + 999)\
+        .execute()
+    for r in batch.data:
+        existing_keys.add((r["sales_order"], r["po"]))
+    if len(batch.data) < 1000:
+        break
+    offset += 1000
+print(f"  loaded {len(existing_keys)} existing MAD keys")
 
 new_rows = []
 for row in rows:
     r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
     so = clean(r.get("SALES ORDER", ""))
     account = clean(r.get("ACCOUNT", ""))
-    if not so or not account or so in existing_so:
+    po = clean(r.get("PO", ""))
+    if not so or not account or so.lower() in PLACEHOLDER_SO:
         continue
-    if so in ('--', '---', "Multiple SO's") or so.strip() == '':
+    if (so, po) in existing_keys:
         continue
     new_rows.append({
         "business": "MAD",
@@ -111,7 +135,7 @@ for row in rows:
         "appt_time": clean(r.get("APPT TIME", "")),
         "consignee": clean(r.get("CONSIGNEE", "")),
         "sales_order": so,
-        "po": clean(r.get("PO", "")),
+        "po": po,
         "ctn": to_int(r.get("CARTONS", 0)),
         "pallet_total": to_int(r.get("PALLET TOTAL", 0)),
         "load_number": clean(r.get("LOAD #", "")),
@@ -132,17 +156,29 @@ data = sheet.get_all_values()
 headers = [h.strip() for h in data[1]]
 rows = data[2:]
 
-existing = supabase.table("outbound").select("sales_order").eq("business", "Instaship").execute()
-existing_so = {r["sales_order"] for r in existing.data}
+existing_keys = set()
+offset = 0
+while True:
+    batch = supabase.table("outbound").select("sales_order, po")\
+        .eq("business", "Instaship")\
+        .range(offset, offset + 999)\
+        .execute()
+    for r in batch.data:
+        existing_keys.add((r["sales_order"], r["po"]))
+    if len(batch.data) < 1000:
+        break
+    offset += 1000
+print(f"  loaded {len(existing_keys)} existing Instaship keys")
 
 new_rows = []
 for row in rows:
     r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
     so = clean(r.get("SALES ORDER", ""))
     account = clean(r.get("ACCOUNT", ""))
-    if not so or not account or so in existing_so:
+    po = clean(r.get("PO", ""))
+    if not so or not account or so.lower() in PLACEHOLDER_SO:
         continue
-    if so in ('--', '---', "Multiple SO's") or so.strip() == '':
+    if (so, po) in existing_keys:
         continue
     new_rows.append({
         "business": "Instaship",
@@ -153,7 +189,7 @@ for row in rows:
         "appt_time": "",
         "consignee": clean(r.get("CONSIGNEE", "")),
         "sales_order": so,
-        "po": clean(r.get("PO", "")),
+        "po": po,
         "ctn": to_int(r.get("CTN", 0)),
         "pallet_total": to_int(r.get("PALLET TOTAL", 0)),
         "load_number": clean(r.get("LOAD #", "")),
@@ -174,18 +210,31 @@ data = sheet.get_all_values()
 headers = [h.strip() for h in data[0]]
 rows = data[1:]
 
-existing = supabase.table("amazon_pickups").select("sales_order").execute()
-existing_so = {r["sales_order"] for r in existing.data}
+existing_keys = set()
+offset = 0
+while True:
+    batch = supabase.table("amazon_pickups").select("sales_order, arn")\
+        .range(offset, offset + 999)\
+        .execute()
+    for r in batch.data:
+        existing_keys.add((r["sales_order"], r["arn"]))
+    if len(batch.data) < 1000:
+        break
+    offset += 1000
+print(f"  loaded {len(existing_keys)} existing Amazon keys")
 
 new_rows = []
 for row in rows:
     r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
     so = clean(r.get("Sales order", ""))
-    if not so or so in existing_so:
+    arn = clean(r.get("ARN#", ""))
+    if not so or so.lower() in PLACEHOLDER_SO:
+        continue
+    if (so, arn) in existing_keys:
         continue
     new_rows.append({
         "sales_order": so,
-        "arn": clean(r.get("ARN#", "")),
+        "arn": arn,
         "carrier": clean(r.get("CARRIER", "")),
         "pallets": to_int(r.get("Pallets", 0)),
         "picked": to_bool(r.get("Picked", "")),
