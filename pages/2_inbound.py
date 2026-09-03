@@ -180,7 +180,7 @@ in_dock = df[df["container_status"] == "In dock"].shape[0] if not df.empty else 
 not_received = df[df["received"] != True].shape[0] if not df.empty else 0
 
 
-col1, col2, col3, col4 = st.columns(3)
+col1, col2, col3 = st.columns(3)
 col1.metric("Active containers", total)
 col2.metric("In dock", in_dock)
 col3.metric("Not yet received", not_received)
