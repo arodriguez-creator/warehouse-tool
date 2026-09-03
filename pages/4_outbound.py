@@ -35,7 +35,7 @@ CONSIGNEES = ["", "WALMART", "HINDA", "VA VETERANS", "TRANSFER", "SAMPLE",
               "CERTIF-A-GIFT", "Other"]
 
 ACCOUNTS = ["", "SAKAR", "AGA", "MNS BRANDS", "TECHNICAL PRO", "CASTLEWOOD",
-            "OSMO", "M.HIDARY", "Other"]
+            "OSMO", "M.HIDARY", "CG MOBILE", "Other"]
 
 ACCOUNT_COLORS = {
     "SAKAR": "#e8f4fd",
@@ -45,6 +45,7 @@ ACCOUNT_COLORS = {
     "CASTLEWOOD": "#ffe5cc",
     "OSMO": "#e5ccff",
     "M.HIDARY": "#fff0cc",
+    "CG MOBILE": "#fff7cc",
 }
 
 def clean(val):
