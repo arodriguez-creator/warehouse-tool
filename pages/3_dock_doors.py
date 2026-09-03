@@ -69,7 +69,7 @@ with st.sidebar:
         current_customer = clean(door_row.get("customer", ""))
         current_carrier = clean(door_row.get("carrier", ""))
 
-        unloading_options = ["", "Unloading", "Full", "Loading"]
+        unloading_options = ["", "Unloading", "Full", "Loading", "Empty"]
         unloading_index = unloading_options.index(current_unloading) if current_unloading in unloading_options else 0
 
         new_container = st.text_input("Container / trailer", value=current_container, key=f"container_{k}")
