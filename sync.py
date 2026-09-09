@@ -151,6 +151,33 @@ if new_rows:
     print(f"  added {len(new_rows)} new MAD shipments")
 else:
     print("  no new MAD shipments")
+# update existing MAD rows with null dates
+print("  checking for MAD rows with missing dates...")
+null_result = supabase.table("outbound")\
+    .select("sales_order, po, id")\
+    .eq("business", "MAD")\
+    .is_("date", "null")\
+    .execute()
+
+if null_result.data:
+    null_keys = {(r["sales_order"], r["po"]): r["id"] for r in null_result.data}
+    updated = 0
+    for row in rows:
+        r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
+        so = clean(r.get("SALES ORDER", ""))
+        po = clean(r.get("PO", ""))
+        if (so, po) not in null_keys:
+            continue
+        new_date = parse_date(r.get("DATE", ""))
+        if new_date:
+            row_id = null_keys[(so, po)]
+            supabase.table("outbound")\
+                .update({"date": new_date})\
+                .eq("id", row_id)\
+                .execute()
+            updated += 1
+    if updated:
+        print(f"  updated {updated} MAD rows with missing dates")
 
 # --- sync outbound Instaship ---
 print("Syncing outbound Instaship...")
@@ -205,6 +232,34 @@ if new_rows:
     print(f"  added {len(new_rows)} new Instaship shipments")
 else:
     print("  no new Instaship shipments")
+
+# update existing Instaship rows with null dates
+print("  checking for Instaship rows with missing dates...")
+null_result = supabase.table("outbound")\
+    .select("sales_order, po, id")\
+    .eq("business", "Instaship")\
+    .is_("date", "null")\
+    .execute()
+
+if null_result.data:
+    null_keys = {(r["sales_order"], r["po"]): r["id"] for r in null_result.data}
+    updated = 0
+    for row in rows:
+        r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
+        so = clean(r.get("SALES ORDER", ""))
+        po = clean(r.get("PO", ""))
+        if (so, po) not in null_keys:
+            continue
+        new_date = parse_date(r.get("DATE", ""))
+        if new_date:
+            row_id = null_keys[(so, po)]
+            supabase.table("outbound")\
+                .update({"date": new_date})\
+                .eq("id", row_id)\
+                .execute()
+            updated += 1
+    if updated:
+        print(f"  updated {updated} Instaship rows with missing dates")
 
 # --- sync amazon pickups ---
 print("Syncing Amazon pickups...")
@@ -288,4 +343,60 @@ if null_keys:
     if updated:
         print(f"  updated {updated} rows with missing dates")
 
+
+print("Force syncing recent MAD dates...")
+from datetime import date, timedelta
+cutoff = (date.today() - timedelta(days=14)).strftime("%Y-%m-%d")
+
+sheet = gc.open("Brodiaea Operations").worksheet("Outbound-MAD 2026")
+data = sheet.get_all_values()
+headers = [h.strip() for h in data[1]]
+rows = data[2:]
+
+updated = 0
+for row in rows:
+    r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
+    so = clean(r.get("SALES ORDER", ""))
+    po = clean(r.get("PO", ""))
+    new_date = parse_date(r.get("DATE", ""))
+    if not so or not new_date or new_date < cutoff:
+        continue
+    result = supabase.table("outbound")\
+        .update({"date": new_date})\
+        .eq("business", "MAD")\
+        .eq("sales_order", so)\
+        .eq("po", po)\
+        .execute()
+    if result.data:
+        updated += 1
+
+print(f"  resynced dates for {updated} recent MAD rows")
+# --- force resync recent Instaship dates ---
+print("Force syncing recent Instaship dates...")
+
+sheet = gc.open("Brodiaea Operations").worksheet("Outbound-Instaship 2026")
+data = sheet.get_all_values()
+headers = [h.strip() for h in data[1]]
+rows = data[2:]
+
+updated = 0
+for row in rows:
+    r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
+    so = clean(r.get("SALES ORDER", ""))
+    po = clean(r.get("PO", ""))
+    new_date = parse_date(r.get("DATE", ""))
+    if not so or not new_date or new_date < cutoff:
+        continue
+    result = supabase.table("outbound")\
+        .update({"date": new_date})\
+        .eq("business", "Instaship")\
+        .eq("sales_order", so)\
+        .eq("po", po)\
+        .execute()
+    if result.data:
+        updated += 1
+
+print(f"  resynced dates for {updated} recent Instaship rows")
 print("\nSync complete!")
+
+# --- force resync recent MAD dates ---
