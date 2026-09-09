@@ -75,7 +75,16 @@ df = load_data()
 # init session state
 if "edit_door_id" not in st.session_state:
     st.session_state["edit_door_id"] = None
-st.session_state["show_door_modal"] = False
+if "show_door_modal" not in st.session_state:
+    st.session_state["show_door_modal"] = False
+if "dock_page_loaded" not in st.session_state:
+    st.session_state["dock_page_loaded"] = False
+
+# only reset modal when first navigating to page, not on every rerun
+if not st.session_state["dock_page_loaded"]:
+    st.session_state["show_door_modal"] = False
+    st.session_state["edit_door_id"] = None
+    st.session_state["dock_page_loaded"] = True
 
 # --- dialog modal ---
 @st.dialog("Edit dock door", width="large")
