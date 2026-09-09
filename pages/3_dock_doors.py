@@ -11,6 +11,16 @@ show_user()
 st.set_page_config(layout="wide")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 page_header("Dock door board", "Click any door to edit — Live from Supabase")
+st.markdown("""
+<style>
+  [data-testid="stDialog"] div[role="dialog"] {
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  [data-testid="stDialog"]::backdrop {
+      background: rgba(0,0,0,0.7) !important;
+  }
+</style>
+""", unsafe_allow_html=True)
 
 def clean(val):
     return "" if not val or str(val) == "nan" or val is None else str(val).strip()
@@ -48,7 +58,7 @@ def load_data():
     df = pd.DataFrame(result.data)
     if not df.empty:
         df["_door_num"] = df["door"].str.extract(r"(\d+)").astype(int)
-        df = df.sort_values("_door_num").drop(columns=["_door_num"])
+        df = df.sort_values("_door_num").reset_index(drop=True).drop(columns=["_door_num"])
     return df
 
 df = load_data()
@@ -191,7 +201,7 @@ if not df.empty:
               <span style="font-size:10px;font-weight:500;color:{c['text']}">{door_label}</span>
               <span style="font-size:10px;font-weight:500;color:{c['text']};word-break:break-all;margin-top:4px">{display_name}</span>
               <span style="font-size:9px;color:{c['text']};margin-top:2px">{display_sub}</span>
-              {f'<span style="font-size:8px;color:{c["text"]};margin-top:2px;font-style:italic">{notes[:15]}...</span>' if notes else ''}
+              {f'<span style="font-size:8px;color:{c["text"]};margin-top:2px;font-style:italic">{notes[:15]}</span>' if notes and len(notes) > 2 else ''}
             </div>
             """, unsafe_allow_html=True)
 
