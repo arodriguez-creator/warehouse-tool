@@ -28,6 +28,11 @@ st.markdown("""
       z-index: 1000;
       background: #ffffff !important;
   }
+  div[data-testid="stDialog"] div[role="dialog"] p,
+  div[data-testid="stDialog"] div[role="dialog"] label,
+  div[data-testid="stDialog"] div[role="dialog"] span {
+      color: #1a2332 !important;
+  }
 </style>
 """, unsafe_allow_html=True)
 
