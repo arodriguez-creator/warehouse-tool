@@ -13,11 +13,14 @@ st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 page_header("Dock door board", "Click any door to edit — Live from Supabase")
 st.markdown("""
 <style>
-  [data-testid="stDialog"] div[role="dialog"] {
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  [data-testid="stDialog"] {
+      background: rgba(0, 0, 0, 0.75) !important;
   }
-  [data-testid="stDialog"]::backdrop {
-      background: rgba(0,0,0,0.7) !important;
+  [data-testid="stDialog"] > div:first-child {
+      background: rgba(0, 0, 0, 0.75) !important;
+  }
+  div[data-testid="stDialogBody"] {
+      background: #ffffff;
   }
 </style>
 """, unsafe_allow_html=True)
@@ -201,7 +204,7 @@ if not df.empty:
               <span style="font-size:10px;font-weight:500;color:{c['text']}">{door_label}</span>
               <span style="font-size:10px;font-weight:500;color:{c['text']};word-break:break-all;margin-top:4px">{display_name}</span>
               <span style="font-size:9px;color:{c['text']};margin-top:2px">{display_sub}</span>
-              {f'<span style="font-size:8px;color:{c["text"]};margin-top:2px;font-style:italic">{notes[:15]}</span>' if notes and len(notes) > 2 else ''}
+              {f'<span style="font-size:8px;color:{c["text"]};margin-top:2px;">📝</span>' if notes and len(notes) > 2 else ''}
             </div>
             """, unsafe_allow_html=True)
 
