@@ -18,10 +18,6 @@ st.markdown("""
   }
   [data-testid="stDialog"] div[role="dialog"] {
       background: #ffffff !important;
-      color: #1a2332 !important;
-  }
-  [data-testid="stDialog"] div[role="dialog"] * {
-      color: #1a2332 !important;
   }
 </style>
 """, unsafe_allow_html=True)
