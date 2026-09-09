@@ -13,10 +13,19 @@ st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 page_header("Dock door board", "Click any door to edit — Live from Supabase")
 st.markdown("""
 <style>
-  [data-testid="stDialog"] > div:first-child {
-      background: rgba(0, 0, 0, 0.75) !important;
+  div[data-testid="stDialog"]:before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.75);
+      z-index: 999;
   }
-  [data-testid="stDialog"] div[role="dialog"] {
+  div[data-testid="stDialog"] div[role="dialog"] {
+      position: relative;
+      z-index: 1000;
       background: #ffffff !important;
   }
 </style>
