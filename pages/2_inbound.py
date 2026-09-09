@@ -220,6 +220,71 @@ with st.expander("🟡 Empty containers in yard", expanded=True):
             hide_index=True
         )
 
+with st.expander("Bulk add containers"):
+    st.caption("Paste a list of container numbers — one per line. Fill shared fields below.")
+    
+    pasted_containers = st.text_area("Container numbers", height=150,
+                                      placeholder="MSDU4123940\nECMU6136033\nTWIU4061775")
+    
+    bc1, bc2 = st.columns(2)
+    bulk_arrival = bc1.date_input("Arrival date", value=datetime.now(pacific).date(), key="bulk_arrival")
+    bulk_account = bc2.text_input("Account", key="bulk_account")
+    
+    bc3, bc4 = st.columns(2)
+    bulk_trucking = bc3.text_input("Trucking company", key="bulk_trucking")
+    bulk_warehouse = bc4.text_input("Warehouse", key="bulk_warehouse")
+    
+    bc5, bc6 = st.columns(2)
+    bulk_status = bc5.selectbox("Container status", ["", "In dock", "scheduled"], key="bulk_status")
+    bulk_dock = bc6.text_input("Dock door", key="bulk_dock")
+
+    if st.button("Preview", key="preview_containers"):
+        if pasted_containers.strip():
+            lines = [l.strip() for l in pasted_containers.strip().split("\n") if l.strip()]
+            st.session_state["bulk_container_preview"] = lines
+            preview_df = pd.DataFrame({"Container": lines})
+            st.dataframe(preview_df, use_container_width=True, hide_index=True)
+            st.caption(f"{len(lines)} containers ready to add")
+        else:
+            st.error("Paste at least one container number")
+
+    if "bulk_container_preview" in st.session_state and st.session_state["bulk_container_preview"]:
+        if st.button("Add all containers", type="primary", key="confirm_bulk_containers"):
+            db = get_db()
+            # get existing containers to avoid duplicates
+            existing = db.table("containers").select("container").execute()
+            existing_set = {r["container"] for r in existing.data}
+            
+            new_rows = []
+            skipped = 0
+            for container in st.session_state["bulk_container_preview"]:
+                if container in existing_set:
+                    skipped += 1
+                    continue
+                new_rows.append({
+                    "arrival_date": bulk_arrival.strftime("%Y-%m-%d"),
+                    "container": container,
+                    "account": bulk_account,
+                    "trucking_company": bulk_trucking,
+                    "container_status": bulk_status,
+                    "dock_door": bulk_dock,
+                    "warehouse": bulk_warehouse,
+                    "empty": False,
+                    "received": False,
+                    "picked_up": False,
+                    "billed": False,
+                    "sku_count": 0,
+                    "carton_count": 0,
+                })
+            if new_rows:
+                db.table("containers").insert(new_rows).execute()
+                st.cache_data.clear()
+                st.session_state.pop("bulk_container_preview", None)
+                st.success(f"Added {len(new_rows)} containers" + (f" · {skipped} already existed" if skipped else ""))
+                st.rerun()
+            else:
+                st.warning(f"All {skipped} containers already exist")
+
 with st.expander("Add new inbound container"):
     with st.form("new_container"):
         fc1, fc2 = st.columns(2)
