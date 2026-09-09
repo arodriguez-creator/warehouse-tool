@@ -9,6 +9,7 @@ require_auth()
 show_user()
 st.session_state["last_page"] = "other"
 import zoneinfo
+pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
 
 st.set_page_config(layout="wide")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
