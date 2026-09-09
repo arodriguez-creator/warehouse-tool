@@ -222,7 +222,15 @@ with st.expander("Add single order"):
                 st.error("Sales order is required")
             else:
                 db = get_db()
-                db.table("amazon_pickups").insert({
+                existing = db.table("amazon_pickups")\
+                    .select("id")\
+                    .eq("sales_order", new_so)\
+                    .eq("arn", new_arn)\
+                    .execute()
+                if existing.data:
+                    st.error(f"Order {new_so} with ARN {new_arn} already exists in the database")
+                else:
+                    db.table("amazon_pickups").insert({    
                     "sales_order": new_so,
                     "arn": new_arn,
                     "carrier": new_carrier,
