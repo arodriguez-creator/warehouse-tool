@@ -18,35 +18,21 @@ pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
 today = datetime.now(pacific).date()
 tomorrow = today + timedelta(days=1)
 
-# --- fixed lists ---
-CARRIERS = ["", "FEDEX FREIGHT", "E&E TRANS", "ROAD RUNNER", "FEDEX ECONOMY",
-            "FEDEX PROPRITY", "JB HUNT", "UPS", "CTCC", "WALMART FLEET",
-            "UPS GROUND", "CTCC/FEDEX FREIGHT", "CTCC/SEAVIEW", "CENTRAL TRANSPORT",
-            "FEDEX GROUND", "ESTES", "ONTRAC", "Other"]
+# --- load lists from settings ---
+@st.cache_data(ttl=300)
+def load_settings():
+    db = get_db()
+    result = db.table("settings_lookup").select("*").order("sort_order").execute()
+    data = result.data
+    carriers = [""] + [r["value"] for r in data if r["category"] == "carrier"] + ["Other"]
+    freight_terms = [""] + [r["value"] for r in data if r["category"] == "freight_term"] + ["Other"]
+    consignees = [""] + [r["value"] for r in data if r["category"] == "consignee"] + ["Other"]
+    accounts = [""] + [r["value"] for r in data if r["category"] == "account"] + ["Other"]
+    account_colors = {r["value"]: r.get("metadata", "#ffffff") or "#ffffff"
+                      for r in data if r["category"] == "account"}
+    return carriers, freight_terms, consignees, accounts, account_colors
 
-FREIGHT_TERMS = ["", "Prepaid CTCC", "Collect", "Prepaid UPS Ground", "PREPAID",
-                 "UPS 2ND DAY AIR", "UPS NEXT DAY AIR", "FEDEX GROUND",
-                 "FEDEX HOME DELIVERY", "FEDEX COLLECT", "3RD PARTY",
-                 "CUSTOMER PROVIDED LABELS", "Other"]
-
-CONSIGNEES = ["", "WALMART", "HINDA", "VA VETERANS", "TRANSFER", "SAMPLE",
-              "STAPLES", "DOME PUBLISHING", "FRED MEYER", "A&A GLOBAL",
-              "POWER SALES", "AMAZON", "BSD SUPERBUY", "TANNER COMPANY",
-              "CERTIF-A-GIFT", "Other"]
-
-ACCOUNTS = ["", "SAKAR", "AGA", "MNS BRANDS", "TECHNICAL PRO", "CASTLEWOOD",
-            "OSMO", "M.HIDARY", "CG MOBILE", "Other"]
-
-ACCOUNT_COLORS = {
-    "SAKAR": "#e8f4fd",
-    "AGA": "#cce5ff",
-    "MNS BRANDS": "#ffcccc",
-    "TECHNICAL PRO": "#ccffcc",
-    "CASTLEWOOD": "#ffe5cc",
-    "OSMO": "#e5ccff",
-    "M.HIDARY": "#fff0cc",
-    "CG MOBILE": "#fff7cc",
-}
+CARRIERS, FREIGHT_TERMS, CONSIGNEES, ACCOUNTS, ACCOUNT_COLORS = load_settings()
 
 def clean(val):
     return "" if not val or str(val) == "nan" or val is None else str(val).strip()
