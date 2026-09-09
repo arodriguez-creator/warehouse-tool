@@ -77,14 +77,13 @@ if "edit_door_id" not in st.session_state:
     st.session_state["edit_door_id"] = None
 if "show_door_modal" not in st.session_state:
     st.session_state["show_door_modal"] = False
-if "dock_page_loaded" not in st.session_state:
-    st.session_state["dock_page_loaded"] = False
 
-# only reset modal when first navigating to page, not on every rerun
-if not st.session_state["dock_page_loaded"]:
+# reset modal only when coming from a different page
+current_page = "dock_doors"
+if st.session_state.get("last_page") != current_page:
     st.session_state["show_door_modal"] = False
     st.session_state["edit_door_id"] = None
-    st.session_state["dock_page_loaded"] = True
+st.session_state["last_page"] = current_page
 
 # --- dialog modal ---
 @st.dialog("Edit dock door", width="large")
