@@ -255,4 +255,37 @@ if new_rows:
 else:
     print("  no new Amazon pickups")
 
+# also update existing rows with null pickup dates
+print("  checking for rows with missing dates...")
+null_result = supabase.table("amazon_pickups")\
+    .select("sales_order, arn")\
+    .is_("pickup_date", "null")\
+    .execute()
+null_keys = {(r["sales_order"], r["arn"]) for r in null_result.data}
+
+if null_keys:
+    updated = 0
+    for row in rows:
+        r = dict(zip(headers, row + [""] * (len(headers) - len(row))))
+        so = clean(r.get("Sales order", ""))
+        arn = clean(r.get("ARN#", ""))
+        if not so or (so, arn) not in null_keys:
+            continue
+        pickup_date = parse_date(r.get("Pick up date", ""))
+        if pickup_date:
+            supabase.table("amazon_pickups")\
+                .update({
+                    "pickup_date": pickup_date,
+                    "picked": to_bool(r.get("Picked", "")),
+                    "ready": to_bool(r.get("Ready", "")),
+                    "bol_printed": to_bool(r.get("Printed BOL & pallet labels", "")),
+                    "picked_up": to_bool(r.get("Picked up", "")),
+                })\
+                .eq("sales_order", so)\
+                .eq("arn", arn)\
+                .execute()
+            updated += 1
+    if updated:
+        print(f"  updated {updated} rows with missing dates")
+
 print("\nSync complete!")
