@@ -7,6 +7,7 @@ from auth import require_auth, show_user, get_db
 
 require_auth()
 show_user()
+st.session_state["last_page"] = "other"
 
 st.set_page_config(layout="wide")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)

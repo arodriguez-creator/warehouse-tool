@@ -8,6 +8,7 @@ from styles import GLOBAL_CSS, page_header
 from auth import require_auth, logout, get_db
 
 require_auth()
+st.session_state["last_page"] = "other"
 
 pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
 today = datetime.now(pacific).date()
