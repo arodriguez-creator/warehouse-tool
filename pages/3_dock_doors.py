@@ -75,8 +75,7 @@ df = load_data()
 # init session state
 if "edit_door_id" not in st.session_state:
     st.session_state["edit_door_id"] = None
-if "show_door_modal" not in st.session_state:
-    st.session_state["show_door_modal"] = False
+st.session_state["show_door_modal"] = False
 
 # --- dialog modal ---
 @st.dialog("Edit dock door", width="large")
