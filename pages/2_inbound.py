@@ -351,7 +351,10 @@ with act3:
         lf_weight = lf6.text_input("Weight", key="lf_weight")
         lf7, lf8 = st.columns(2)
         lf_dock = lf7.text_input("Dock door", key="lf_dock")
-        lf_desc = lf8.text_input("Description", key="lf_desc")
+        lf_desc = lf8.text_input("Description / transfer name", key="lf_desc")
+
+        lf9, lf10 = st.columns(2)
+        lf_po = lf9.text_input("PO / reference #", key="lf_po")
         lf_notes = st.text_input("Notes", key="lf_notes")
         lf_submitted = st.form_submit_button("Add")
 
@@ -369,6 +372,7 @@ with act3:
                     "pieces": int(lf_pieces),
                     "weight": lf_weight,
                     "dock_door": lf_dock,
+                    "po_number": lf_po,
                     "notes": lf_notes,
                     "received": False,
                     "checked_in": False,
@@ -441,16 +445,16 @@ if not lf_df.empty:
     lf_df["arrival_date"] = pd.to_datetime(lf_df["arrival_date"], errors="coerce")\
         .apply(lambda x: x.strftime("%m/%d/%Y") if pd.notna(x) else "")
 
-    lf_display_cols = ["arrival_date", "description", "account", "carrier",
-                       "pro_number", "pieces", "weight", "dock_door",
-                       "checked_in", "received", "notes"]
+    lf_display_cols = ["arrival_date", "description", "po_number", "account", "carrier",
+                   "pro_number", "pieces", "weight", "dock_door",
+                   "checked_in", "received", "notes"]
     lf_display_cols = [c for c in lf_display_cols if c in lf_df.columns]
 
     lf_rename = {
         "arrival_date": "Date", "description": "Description", "account": "Account",
         "carrier": "Carrier", "pro_number": "PRO #", "pieces": "Pieces",
         "weight": "Weight", "dock_door": "Door", "notes": "Notes",
-        "checked_in": "Checked in", "received": "Received"
+        "checked_in": "Checked in", "received": "Received","po_number": "PO / Reference",
     }
 
     lf_edited = st.data_editor(
