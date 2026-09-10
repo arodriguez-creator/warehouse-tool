@@ -105,10 +105,19 @@ def door_edit_modal(door_row):
     st.markdown(f"**{door_label}**")
 
     mc1, mc2 = st.columns(2)
-    new_container = mc1.text_input("Container / trailer", value=current_container, key=f"d_container")
+    active_containers = load_active_containers()
+    container_options = [""] + active_containers + ["Other / manual entry"]
+    current_idx = container_options.index(current_container) if current_container in container_options else len(container_options) - 1
+
+    selected_container_opt = mc1.selectbox("Container / trailer", container_options,
+                                        index=current_idx, key=f"d_container_sel")
+    if selected_container_opt == "Other / manual entry":
+        new_container = mc1.text_input("Enter container number", value=current_container, key=f"d_container_manual")
+    else:
+        new_container = selected_container_opt
     new_status = mc2.selectbox("Status", ["Vacant", "Occupied"],
-                                index=0 if "vacant" in current_status.lower() else 1,
-                                key=f"d_status")
+        index=0 if "vacant" in current_status.lower() else 1,
+        key=f"d_status")
 
     mc3, mc4 = st.columns(2)
     new_unloading = mc3.selectbox("Unloading / empty", unloading_options,
