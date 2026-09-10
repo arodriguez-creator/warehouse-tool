@@ -70,6 +70,17 @@ def load_data():
         df = df.sort_values("_door_num").reset_index(drop=True).drop(columns=["_door_num"])
     return df
 
+@st.cache_data(ttl=60)
+def load_active_containers():
+    db = get_db()
+    result = db.table("containers")\
+        .select("container, account")\
+        .eq("picked_up", False)\
+        .eq("empty", False)\
+        .order("arrival_date", desc=True)\
+        .execute()
+    return [r["container"] for r in result.data if r["container"]]
+
 df = load_data()
 
 # init session state
