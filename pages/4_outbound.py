@@ -269,12 +269,15 @@ with st.sidebar:
                 st.rerun()
 
 # --- metrics ---
+pending_mad = pending_df[pending_df["business"] == "MAD"] if not pending_df.empty else pd.DataFrame()
+pending_insta = pending_df[pending_df["business"] == "Instaship"] if not pending_df.empty else pd.DataFrame()
+
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Shipments today", len(df_today))
 col2.metric("MAD today", len(mad_today))
 col3.metric("Instaship today", len(insta_today))
-col4.metric("Total cartons", f"{df_today['ctn'].sum():,}" if not df_today.empty else "0")
-col5.metric("Total pallets", df_today["pallet_total"].sum() if not df_today.empty else 0)
+col4.metric("Pending MAD", len(pending_mad))
+col5.metric("Pending Instaship", len(pending_insta))
 
 # --- tabs ---
 tab1, tab2 = st.tabs(["📦 Shipment log", "🕐 Pending orders"])
