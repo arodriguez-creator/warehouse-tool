@@ -38,7 +38,7 @@ def get_door_type(status, unloading, container):
     status = str(status).strip().lower()
     unloading = str(unloading).strip().lower()
     container = str(container).strip()
-    reserved = ["ramp", "trash", "cardboard", "pallets", "fedex fround", "ups"]
+    reserved = ["ramp", "trash", "cardboard", "pallets", "fedex ground", "ups"]
     if any(r in container.lower() for r in reserved):
         return "reserved"
     if "vacant" in status:
