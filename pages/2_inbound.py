@@ -1,19 +1,21 @@
 import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
+import zoneinfo
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from styles import GLOBAL_CSS, page_header
 from auth import require_auth, show_user, get_db
+
 require_auth()
 show_user()
 st.session_state["last_page"] = "other"
-import zoneinfo
-pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
 
 st.set_page_config(layout="wide")
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 page_header("Inbound containers", "Live from Supabase — Inbound")
+
+pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
 
 def clean(val):
     return "" if not val or str(val) == "nan" or val is None else str(val).strip()
@@ -21,14 +23,17 @@ def clean(val):
 @st.cache_data(ttl=60)
 def load_data():
     db = get_db()
-    result = db.table("containers").select("*").execute()
+    cutoff = (datetime.now(pacific) - timedelta(days=14)).strftime("%Y-%m-%d")
+    result = db.table("containers")\
+        .select("*")\
+        .eq("picked_up", False)\
+        .gte("arrival_date", cutoff)\
+        .order("arrival_date", desc=False)\
+        .execute()
     df = pd.DataFrame(result.data)
-    if df.empty:
-        return df
-    df["arrival_date"] = pd.to_datetime(df["arrival_date"], errors="coerce")
+    if not df.empty:
+        df["arrival_date"] = pd.to_datetime(df["arrival_date"], errors="coerce")
     return df
-
-
 
 @st.cache_data(ttl=60)
 def load_dock_data():
@@ -39,7 +44,6 @@ def load_dock_data():
 @st.cache_data(ttl=60)
 def load_loose_freight():
     db = get_db()
-    pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
     cutoff = (datetime.now(pacific) - timedelta(days=14)).strftime("%Y-%m-%d")
     result = db.table("loose_freight")\
         .select("*")\
@@ -50,54 +54,46 @@ def load_loose_freight():
     return pd.DataFrame(result.data)
 
 def get_active_df():
-    db = get_db()
-    import zoneinfo
-    pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
-    cutoff = (datetime.now(pacific) - timedelta(days=14)).strftime("%Y-%m-%d")
-    result = db.table("containers")\
-        .select("*")\
-        .eq("picked_up", False)\
-        .gte("arrival_date", cutoff)\
-        .order("arrival_date", desc=True)\
-        .execute()
-    df = pd.DataFrame(result.data)
+    df = load_data()
     if df.empty:
         return df
-    df["arrival_date"] = pd.to_datetime(df["arrival_date"], errors="coerce")
+    df = df[df["picked_up"] != True]
+    df = df[df["arrival_date"].notna()]
     df = df[df["container"].str.strip() != ""]
+    df = df.sort_values("arrival_date", ascending=False)
     return df
 
 # --- sidebar ---
 with st.sidebar:
     st.subheader("Container actions")
     df_all = get_active_df()
+    container_options = df_all["container"].tolist() if not df_all.empty else []
 
-    if not df_all.empty:
-        container_options = df_all["container"].tolist()
+    if container_options:
         selected_container = st.selectbox("Select container", container_options, key="container_select")
         sel_row = df_all[df_all["container"] == selected_container].iloc[0]
         row_id = sel_row["id"]
         received = sel_row.get("received", False)
         picked = sel_row.get("picked_up", False)
         empty = sel_row.get("empty", False)
+        checked_in = sel_row.get("checked_in", False)
         k = selected_container.replace(" ", "_")
 
         st.markdown("**Quick actions**")
-        checked_in = sel_row.get("checked_in", False)
-if checked_in:
-    st.success("Checked in ✓")
-else:
-    if st.button("Check in", type="primary", use_container_width=True, key=f"checkin_{k}"):
-        db = get_db()
-        pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
-        db.table("containers").update({
-            "checked_in": True,
-            "checked_in_timestamp": datetime.now(pacific).isoformat(),
-            "container_status": "In dock"
-        }).eq("id", row_id).execute()
-        st.cache_data.clear()
-        st.success(f"{selected_container} checked in")
-        st.rerun()
+
+        if checked_in:
+            st.success("Checked in ✓")
+        else:
+            if st.button("Check in", type="primary", use_container_width=True, key=f"checkin_{k}"):
+                db = get_db()
+                db.table("containers").update({
+                    "checked_in": True,
+                    "checked_in_timestamp": datetime.now(pacific).isoformat(),
+                    "container_status": "In dock"
+                }).eq("id", row_id).execute()
+                st.cache_data.clear()
+                st.success(f"{selected_container} checked in")
+                st.rerun()
 
         if empty:
             st.success("Container empty ✓")
@@ -108,12 +104,10 @@ else:
                     "empty_timestamp": None
                 }).eq("id", row_id).execute()
                 st.cache_data.clear()
-                st.success(f"{selected_container} unmarked")
                 st.rerun()
         else:
             if st.button("Mark empty", type="primary", use_container_width=True, key=f"empty_{k}"):
                 db = get_db()
-                pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
                 db.table("containers").update({
                     "empty": True,
                     "empty_timestamp": datetime.now(pacific).strftime("%Y-%m-%d")
@@ -129,7 +123,6 @@ else:
                 db = get_db()
                 db.table("containers").update({"received": True}).eq("id", row_id).execute()
                 st.cache_data.clear()
-                st.success(f"{selected_container} marked received")
                 st.rerun()
 
         if picked:
@@ -139,7 +132,6 @@ else:
                 db = get_db()
                 db.table("containers").update({"picked_up": True}).eq("id", row_id).execute()
                 st.cache_data.clear()
-                st.success(f"{selected_container} marked picked up")
                 st.rerun()
 
         st.divider()
@@ -210,113 +202,41 @@ df = get_active_df()
 total = len(df)
 in_dock = df[df["container_status"] == "In dock"].shape[0] if not df.empty else 0
 not_received = df[df["received"] != True].shape[0] if not df.empty else 0
+not_checked_in = df[df["checked_in"] != True].shape[0] if not df.empty else 0
 
-
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Active containers", total)
 col2.metric("In dock", in_dock)
 col3.metric("Not yet received", not_received)
+col4.metric("Not checked in", not_checked_in)
 
+# --- overdue check-in alerts ---
+yesterday_str = (datetime.now(pacific) - timedelta(days=1)).strftime("%Y-%m-%d")
+overdue_result = get_db().table("containers")\
+    .select("container, account, arrival_date, trucking_company")\
+    .eq("checked_in", False)\
+    .eq("picked_up", False)\
+    .lte("arrival_date", yesterday_str)\
+    .execute()
+overdue_df = pd.DataFrame(overdue_result.data)
+
+if not overdue_df.empty:
+    st.error(f"⚠️ {len(overdue_df)} container(s) expected but not yet checked in")
+    for _, row in overdue_df.iterrows():
+        st.markdown(f"""<div class="alert-red">
+            <p class="alert-title">{row['container']} — not checked in</p>
+            <p class="alert-sub">{row['account']} · Expected {row['arrival_date']} · {row.get('trucking_company','')}</p>
+        </div>""", unsafe_allow_html=True)
 
 if st.button("Refresh data"):
     st.cache_data.clear()
     st.rerun()
 
-st.subheader("Active container log")
-st.caption("Click any column header to sort")
-with st.expander("🟡 Empty containers in yard", expanded=True):
-    db = get_db()
-    empty_result = db.table("containers")\
-        .select("container, account, trucking_company, dock_door, empty_timestamp")\
-        .eq("empty", True)\
-        .eq("picked_up", False)\
-        .order("empty_timestamp")\
-        .execute()
-    empty_df = pd.DataFrame(empty_result.data)
+# --- consolidated action tabs ---
+st.markdown("**Add to inbound**")
+act1, act2, act3 = st.tabs(["📦 Add container", "📋 Bulk add containers", "🚛 Add loose freight / transfer"])
 
-    if empty_df.empty:
-        st.success("No empty containers in yard")
-    else:
-        st.caption(f"{len(empty_df)} empty containers waiting for pickup")
-        rename_map = {
-            "container": "Container",
-            "account": "Account",
-            "trucking_company": "Trucking company",
-            "dock_door": "Dock door",
-            "empty_timestamp": "Empty date"
-        }
-        st.dataframe(
-            empty_df.rename(columns=rename_map),
-            use_container_width=True,
-            hide_index=True
-        )
-
-with st.expander("Bulk add containers"):
-    st.caption("Paste a list of container numbers — one per line. Fill shared fields below.")
-    
-    pasted_containers = st.text_area("Container numbers", height=150,
-                                      placeholder="MSDU4123940\nECMU6136033\nTWIU4061775")
-    
-    bc1, bc2 = st.columns(2)
-    bulk_arrival = bc1.date_input("Arrival date", value=datetime.now(pacific).date(), key="bulk_arrival")
-    bulk_account = bc2.text_input("Account", key="bulk_account")
-    
-    bc3, bc4 = st.columns(2)
-    bulk_trucking = bc3.text_input("Trucking company", key="bulk_trucking")
-    bulk_warehouse = bc4.text_input("Warehouse", key="bulk_warehouse")
-    
-    bc5, bc6 = st.columns(2)
-    bulk_status = bc5.selectbox("Container status", ["", "In dock", "scheduled"], key="bulk_status")
-    bulk_dock = bc6.text_input("Dock door", key="bulk_dock")
-
-    if st.button("Preview", key="preview_containers"):
-        if pasted_containers.strip():
-            lines = [l.strip() for l in pasted_containers.strip().split("\n") if l.strip()]
-            st.session_state["bulk_container_preview"] = lines
-            preview_df = pd.DataFrame({"Container": lines})
-            st.dataframe(preview_df, use_container_width=True, hide_index=True)
-            st.caption(f"{len(lines)} containers ready to add")
-        else:
-            st.error("Paste at least one container number")
-
-    if "bulk_container_preview" in st.session_state and st.session_state["bulk_container_preview"]:
-        if st.button("Add all containers", type="primary", key="confirm_bulk_containers"):
-            db = get_db()
-            # get existing containers to avoid duplicates
-            existing = db.table("containers").select("container").execute()
-            existing_set = {r["container"] for r in existing.data}
-            
-            new_rows = []
-            skipped = 0
-            for container in st.session_state["bulk_container_preview"]:
-                if container in existing_set:
-                    skipped += 1
-                    continue
-                new_rows.append({
-                    "arrival_date": bulk_arrival.strftime("%Y-%m-%d"),
-                    "container": container,
-                    "account": bulk_account,
-                    "trucking_company": bulk_trucking,
-                    "container_status": bulk_status,
-                    "dock_door": bulk_dock,
-                    "warehouse": bulk_warehouse,
-                    "empty": False,
-                    "received": False,
-                    "picked_up": False,
-                    "billed": False,
-                    "sku_count": 0,
-                    "carton_count": 0,
-                })
-            if new_rows:
-                db.table("containers").insert(new_rows).execute()
-                st.cache_data.clear()
-                st.session_state.pop("bulk_container_preview", None)
-                st.success(f"Added {len(new_rows)} containers" + (f" · {skipped} already existed" if skipped else ""))
-                st.rerun()
-            else:
-                st.warning(f"All {skipped} containers already exist")
-
-with st.expander("Add new inbound container"):
+with act1:
     with st.form("new_container"):
         fc1, fc2 = st.columns(2)
         new_arrival = fc1.date_input("Arrival date")
@@ -351,45 +271,74 @@ with st.expander("Add new inbound container"):
                     "empty": False,
                     "received": False,
                     "picked_up": False,
+                    "checked_in": False,
                     "billed": False,
                 }).execute()
-                st.success(f"Container {new_container_num} added successfully")
+                st.success(f"Container {new_container_num} added")
                 st.cache_data.clear()
                 st.rerun()
 
-if not df.empty:
-    accounts = ["All"] + sorted(df["account"].dropna().unique().tolist())
-    selected_account = st.selectbox("Filter by account", accounts)
-    if selected_account != "All":
-        df = df[df["account"] == selected_account]
+with act2:
+    st.caption("Paste a list of container numbers — one per line. Fill shared fields below.")
+    pasted_containers = st.text_area("Container numbers", height=120,
+                                      placeholder="MSDU4123940\nECMU6136033\nTWIU4061775",
+                                      key="bulk_paste")
+    bc1, bc2 = st.columns(2)
+    bulk_arrival = bc1.date_input("Arrival date", value=datetime.now(pacific).date(), key="bulk_arrival")
+    bulk_account = bc2.text_input("Account", key="bulk_account")
+    bc3, bc4 = st.columns(2)
+    bulk_trucking = bc3.text_input("Trucking company", key="bulk_trucking")
+    bulk_warehouse = bc4.text_input("Warehouse", key="bulk_warehouse")
+    bc5, bc6 = st.columns(2)
+    bulk_status = bc5.selectbox("Container status", ["", "In dock", "scheduled"], key="bulk_status")
+    bulk_dock = bc6.text_input("Dock door", key="bulk_dock")
 
-    display_cols = ["arrival_date", "container", "account", "container_status",
-                "trucking_company", "dock_door", "sku_count", "carton_count",
-                "empty", "received", "warehouse"]
-    display_cols = [c for c in display_cols if c in df.columns]
-    df["arrival_date"] = df["arrival_date"].dt.strftime("%m/%d/%Y")
+    if st.button("Preview", key="preview_containers"):
+        if pasted_containers.strip():
+            lines = [l.strip() for l in pasted_containers.strip().split("\n") if l.strip()]
+            st.session_state["bulk_container_preview"] = lines
+            st.dataframe(pd.DataFrame({"Container": lines}), use_container_width=True, hide_index=True)
+            st.caption(f"{len(lines)} containers ready to add")
+        else:
+            st.error("Paste at least one container number")
 
-    rename_map = {
-        "arrival_date": "Arrival date",
-        "container": "Container",
-        "account": "Account",
-        "container_status": "Status",
-        "trucking_company": "Trucking company",
-        "dock_door": "Dock door",
-        "sku_count": "SKU count",
-        "carton_count": "Carton count",
-        "received": "Received",
-        "warehouse": "Warehouse"
-    }
-    st.dataframe(df[display_cols].rename(columns=rename_map), use_container_width=True, hide_index=True)
-else:
-    st.info("No active containers in the last 14 days")
+    if "bulk_container_preview" in st.session_state and st.session_state["bulk_container_preview"]:
+        if st.button("Add all containers", type="primary", key="confirm_bulk_containers"):
+            db = get_db()
+            existing = db.table("containers").select("container").execute()
+            existing_set = {r["container"] for r in existing.data}
+            new_rows = []
+            skipped = 0
+            for container in st.session_state["bulk_container_preview"]:
+                if container in existing_set:
+                    skipped += 1
+                    continue
+                new_rows.append({
+                    "arrival_date": bulk_arrival.strftime("%Y-%m-%d"),
+                    "container": container,
+                    "account": bulk_account,
+                    "trucking_company": bulk_trucking,
+                    "container_status": bulk_status,
+                    "dock_door": bulk_dock,
+                    "warehouse": bulk_warehouse,
+                    "empty": False,
+                    "received": False,
+                    "picked_up": False,
+                    "checked_in": False,
+                    "billed": False,
+                    "sku_count": 0,
+                    "carton_count": 0,
+                })
+            if new_rows:
+                db.table("containers").insert(new_rows).execute()
+                st.cache_data.clear()
+                st.session_state.pop("bulk_container_preview", None)
+                st.success(f"Added {len(new_rows)} containers" + (f" · {skipped} already existed" if skipped else ""))
+                st.rerun()
+            else:
+                st.warning(f"All {skipped} containers already exist")
 
-st.divider()
-st.subheader("Loose freight & transfers")
-st.caption("LTL shipments, transfers, and loose freight — not containerized")
-
-with st.expander("Add loose freight / transfer"):
+with act3:
     with st.form("new_loose_freight"):
         lf1, lf2 = st.columns(2)
         lf_arrival = lf1.date_input("Arrival date", value=datetime.now(pacific).date(), key="lf_arrival")
@@ -422,10 +371,69 @@ with st.expander("Add loose freight / transfer"):
                     "dock_door": lf_dock,
                     "notes": lf_notes,
                     "received": False,
+                    "checked_in": False,
                 }).execute()
                 st.cache_data.clear()
                 st.success("Loose freight added")
                 st.rerun()
+
+st.divider()
+
+# --- empty containers in yard ---
+with st.expander("🟡 Empty containers in yard", expanded=True):
+    empty_result = get_db().table("containers")\
+        .select("container, account, trucking_company, dock_door, empty_timestamp")\
+        .eq("empty", True)\
+        .eq("picked_up", False)\
+        .execute()
+    empty_df = pd.DataFrame(empty_result.data)
+
+    if empty_df.empty:
+        st.success("No empty containers in yard")
+    else:
+        st.caption(f"{len(empty_df)} empty containers waiting for pickup")
+        st.dataframe(
+            empty_df.rename(columns={
+                "container": "Container", "account": "Account",
+                "trucking_company": "Trucking company",
+                "dock_door": "Dock door", "empty_timestamp": "Empty date"
+            }),
+            use_container_width=True, hide_index=True
+        )
+
+# --- active container log ---
+st.subheader("Active container log")
+st.caption("Click any column header to sort")
+
+if not df.empty:
+    accounts = ["All"] + sorted(df["account"].dropna().unique().tolist())
+    selected_account = st.selectbox("Filter by account", accounts)
+    if selected_account != "All":
+        df = df[df["account"] == selected_account]
+
+    display_cols = ["arrival_date", "container", "account", "container_status",
+                    "trucking_company", "dock_door", "sku_count", "carton_count",
+                    "checked_in", "empty", "received", "warehouse"]
+    display_cols = [c for c in display_cols if c in df.columns]
+    df["arrival_date"] = df["arrival_date"].dt.strftime("%m/%d/%Y")
+
+    rename_map = {
+        "arrival_date": "Arrival date", "container": "Container",
+        "account": "Account", "container_status": "Status",
+        "trucking_company": "Trucking company", "dock_door": "Dock door",
+        "sku_count": "SKU count", "carton_count": "Carton count",
+        "checked_in": "Checked in", "empty": "Empty",
+        "received": "Received", "warehouse": "Warehouse"
+    }
+    st.dataframe(df[display_cols].rename(columns=rename_map),
+                 use_container_width=True, hide_index=True)
+else:
+    st.info("No active containers in the last 14 days")
+
+# --- loose freight section ---
+st.divider()
+st.subheader("Loose freight & transfers")
+st.caption("LTL shipments, transfers, and loose freight — not containerized")
 
 lf_df = load_loose_freight()
 
@@ -434,34 +442,44 @@ if not lf_df.empty:
         .apply(lambda x: x.strftime("%m/%d/%Y") if pd.notna(x) else "")
 
     lf_display_cols = ["arrival_date", "description", "account", "carrier",
-                       "pro_number", "pieces", "weight", "dock_door", "notes"]
+                       "pro_number", "pieces", "weight", "dock_door",
+                       "checked_in", "received", "notes"]
     lf_display_cols = [c for c in lf_display_cols if c in lf_df.columns]
 
     lf_rename = {
         "arrival_date": "Date", "description": "Description", "account": "Account",
         "carrier": "Carrier", "pro_number": "PRO #", "pieces": "Pieces",
-        "weight": "Weight", "dock_door": "Door", "notes": "Notes"
+        "weight": "Weight", "dock_door": "Door", "notes": "Notes",
+        "checked_in": "Checked in", "received": "Received"
     }
 
     lf_edited = st.data_editor(
-        lf_df[lf_display_cols + ["id", "received"]].rename(columns=lf_rename),
+        lf_df[lf_display_cols + ["id"]].rename(columns=lf_rename),
         use_container_width=True,
         hide_index=True,
-        disabled=["Date", "Description", "Account", "Carrier", "PRO #", "Pieces", "Weight", "Door", "Notes"],
+        disabled=["Date", "Description", "Account", "Carrier", "PRO #",
+                  "Pieces", "Weight", "Door", "Notes"],
         column_config={
-            "received": st.column_config.CheckboxColumn("Received"),
+            "Checked in": st.column_config.CheckboxColumn("Checked in"),
+            "Received": st.column_config.CheckboxColumn("Received"),
         }
     )
 
     if st.button("Save loose freight changes", key="save_lf"):
         db = get_db()
         changed = 0
-        original = lf_df[lf_display_cols + ["id", "received"]].rename(columns=lf_rename)
+        original = lf_df[lf_display_cols + ["id"]].rename(columns=lf_rename)
         for i, row in lf_edited.iterrows():
             orig = original.iloc[i]
-            if bool(row.get("received")) != bool(orig.get("received")):
-                db.table("loose_freight").update({"received": bool(row["received"])})\
-                    .eq("id", orig["id"]).execute()
+            updates = {}
+            if bool(row.get("Received")) != bool(orig.get("Received")):
+                updates["received"] = bool(row["Received"])
+            if bool(row.get("Checked in")) != bool(orig.get("Checked in")):
+                updates["checked_in"] = bool(row["Checked in"])
+                if bool(row.get("Checked in")):
+                    updates["checked_in_timestamp"] = datetime.now(pacific).isoformat()
+            if updates:
+                db.table("loose_freight").update(updates).eq("id", orig["id"]).execute()
                 changed += 1
         if changed:
             st.cache_data.clear()
