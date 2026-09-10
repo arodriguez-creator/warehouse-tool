@@ -28,10 +28,25 @@ def load_data():
     df["arrival_date"] = pd.to_datetime(df["arrival_date"], errors="coerce")
     return df
 
+
+
 @st.cache_data(ttl=60)
 def load_dock_data():
     db = get_db()
     result = db.table("dock_status").select("*").execute()
+    return pd.DataFrame(result.data)
+
+@st.cache_data(ttl=60)
+def load_loose_freight():
+    db = get_db()
+    pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
+    cutoff = (datetime.now(pacific) - timedelta(days=14)).strftime("%Y-%m-%d")
+    result = db.table("loose_freight")\
+        .select("*")\
+        .eq("received", False)\
+        .gte("arrival_date", cutoff)\
+        .order("arrival_date", desc=True)\
+        .execute()
     return pd.DataFrame(result.data)
 
 def get_active_df():
@@ -354,5 +369,92 @@ if not df.empty:
     st.dataframe(df[display_cols].rename(columns=rename_map), use_container_width=True, hide_index=True)
 else:
     st.info("No active containers in the last 14 days")
+
+st.divider()
+st.subheader("Loose freight & transfers")
+st.caption("LTL shipments, transfers, and loose freight — not containerized")
+
+with st.expander("Add loose freight / transfer"):
+    with st.form("new_loose_freight"):
+        lf1, lf2 = st.columns(2)
+        lf_arrival = lf1.date_input("Arrival date", value=datetime.now(pacific).date(), key="lf_arrival")
+        lf_account = lf2.text_input("Account", key="lf_account")
+        lf3, lf4 = st.columns(2)
+        lf_carrier = lf3.text_input("Carrier", key="lf_carrier")
+        lf_pro = lf4.text_input("PRO / tracking #", key="lf_pro")
+        lf5, lf6 = st.columns(2)
+        lf_pieces = lf5.number_input("Pieces", min_value=0, step=1, key="lf_pieces")
+        lf_weight = lf6.text_input("Weight", key="lf_weight")
+        lf7, lf8 = st.columns(2)
+        lf_dock = lf7.text_input("Dock door", key="lf_dock")
+        lf_desc = lf8.text_input("Description", key="lf_desc")
+        lf_notes = st.text_input("Notes", key="lf_notes")
+        lf_submitted = st.form_submit_button("Add")
+
+        if lf_submitted:
+            if not lf_account:
+                st.error("Account is required")
+            else:
+                db = get_db()
+                db.table("loose_freight").insert({
+                    "arrival_date": lf_arrival.strftime("%Y-%m-%d"),
+                    "description": lf_desc,
+                    "account": lf_account,
+                    "carrier": lf_carrier,
+                    "pro_number": lf_pro,
+                    "pieces": int(lf_pieces),
+                    "weight": lf_weight,
+                    "dock_door": lf_dock,
+                    "notes": lf_notes,
+                    "received": False,
+                }).execute()
+                st.cache_data.clear()
+                st.success("Loose freight added")
+                st.rerun()
+
+lf_df = load_loose_freight()
+
+if not lf_df.empty:
+    lf_df["arrival_date"] = pd.to_datetime(lf_df["arrival_date"], errors="coerce")\
+        .apply(lambda x: x.strftime("%m/%d/%Y") if pd.notna(x) else "")
+
+    lf_display_cols = ["arrival_date", "description", "account", "carrier",
+                       "pro_number", "pieces", "weight", "dock_door", "notes"]
+    lf_display_cols = [c for c in lf_display_cols if c in lf_df.columns]
+
+    lf_rename = {
+        "arrival_date": "Date", "description": "Description", "account": "Account",
+        "carrier": "Carrier", "pro_number": "PRO #", "pieces": "Pieces",
+        "weight": "Weight", "dock_door": "Door", "notes": "Notes"
+    }
+
+    lf_edited = st.data_editor(
+        lf_df[lf_display_cols + ["id", "received"]].rename(columns=lf_rename),
+        use_container_width=True,
+        hide_index=True,
+        disabled=["Date", "Description", "Account", "Carrier", "PRO #", "Pieces", "Weight", "Door", "Notes"],
+        column_config={
+            "received": st.column_config.CheckboxColumn("Received"),
+        }
+    )
+
+    if st.button("Save loose freight changes", key="save_lf"):
+        db = get_db()
+        changed = 0
+        original = lf_df[lf_display_cols + ["id", "received"]].rename(columns=lf_rename)
+        for i, row in lf_edited.iterrows():
+            orig = original.iloc[i]
+            if bool(row.get("received")) != bool(orig.get("received")):
+                db.table("loose_freight").update({"received": bool(row["received"])})\
+                    .eq("id", orig["id"]).execute()
+                changed += 1
+        if changed:
+            st.cache_data.clear()
+            st.success(f"Updated {changed} items")
+            st.rerun()
+        else:
+            st.info("No changes detected")
+else:
+    st.info("No pending loose freight in the last 14 days")
 
 st.caption("Select a container in the sidebar to mark received, picked up, or edit details. Changes write directly to Supabase.")
