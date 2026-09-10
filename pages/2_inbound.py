@@ -83,6 +83,21 @@ with st.sidebar:
         k = selected_container.replace(" ", "_")
 
         st.markdown("**Quick actions**")
+        checked_in = sel_row.get("checked_in", False)
+if checked_in:
+    st.success("Checked in ✓")
+else:
+    if st.button("Check in", type="primary", use_container_width=True, key=f"checkin_{k}"):
+        db = get_db()
+        pacific = zoneinfo.ZoneInfo("America/Los_Angeles")
+        db.table("containers").update({
+            "checked_in": True,
+            "checked_in_timestamp": datetime.now(pacific).isoformat(),
+            "container_status": "In dock"
+        }).eq("id", row_id).execute()
+        st.cache_data.clear()
+        st.success(f"{selected_container} checked in")
+        st.rerun()
 
         if empty:
             st.success("Container empty ✓")
