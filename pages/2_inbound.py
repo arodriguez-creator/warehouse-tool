@@ -48,8 +48,7 @@ def load_loose_freight():
     result = db.table("loose_freight")\
         .select("*")\
         .eq("received", False)\
-        .gte("arrival_date", cutoff)\
-        .order("arrival_date", desc=True)\
+        .order("created_at", desc=True)\
         .execute()
     return pd.DataFrame(result.data)
 
@@ -340,9 +339,7 @@ with act2:
 
 with act3:
     with st.form("new_loose_freight"):
-        lf1, lf2 = st.columns(2)
-        lf_arrival = lf1.date_input("Arrival date", value=datetime.now(pacific).date(), key="lf_arrival")
-        lf_account = lf2.text_input("Account", key="lf_account")
+        lf_account = st.text_input("Account", key="lf_account")
         lf3, lf4 = st.columns(2)
         lf_carrier = lf3.text_input("Carrier", key="lf_carrier")
         lf_pro = lf4.text_input("PRO / tracking #", key="lf_pro")
@@ -364,7 +361,7 @@ with act3:
             else:
                 db = get_db()
                 db.table("loose_freight").insert({
-                    "arrival_date": lf_arrival.strftime("%Y-%m-%d"),
+                    "arrival_date": None,
                     "description": lf_desc,
                     "account": lf_account,
                     "carrier": lf_carrier,
@@ -482,6 +479,11 @@ if not lf_df.empty:
                 updates["checked_in"] = bool(row["Checked in"])
                 if bool(row.get("Checked in")):
                     updates["checked_in_timestamp"] = datetime.now(pacific).isoformat()
+            if bool(row.get("Checked in")) != bool(orig.get("Checked in")):
+                updates["checked_in"] = bool(row["Checked in"])
+                if bool(row.get("Checked in")):
+                    updates["checked_in_timestamp"] = datetime.now(pacific).isoformat()
+                    updates["arrival_date"] = datetime.now(pacific).strftime("%Y-%m-%d")        
             if updates:
                 db.table("loose_freight").update(updates).eq("id", orig["id"]).execute()
                 changed += 1
